@@ -1,0 +1,31 @@
+import ujson as json
+
+def json_to_bytes(dict_msg):
+    return bytes(json.dumps(dict_msg), 'ascii')
+
+def split_string_into_list(string, n):
+    return [string[x:x+n] for x in range(0, len(string), n)]
+
+def add_chksum_info_tochunks(chunks, user, chunk_type):
+    full_chunk_msgs = [{'u':user, chunk_type:chunk,'n': idx,'c':len(chunks)}
+                       for idx, chunk in enumerate(chunks)]
+    return full_chunk_msgs
+
+def chunk_data_to_payload(dict_msg):
+    """take a single message in json form
+    {something:something, 'u':username}, where u is optional
+    and split into a list of strings, each less than x bytes"""
+    try:
+        user = dict_msg['u']
+        del dict_msg['u']
+    except KeyError:
+        print('no user in this message')
+        user = None
+    chunk_type = list(dict_msg.keys())[0]
+    string_msg = json.dumps(list(dict_msg.values())[0])
+    #convert {res:something} to '{res:something}', or {kv_values:(a,b)} to '{kv_values:(a,b)}'
+    string_list = split_string_into_list(string_msg, 10)
+    print('list is: ',string_list)
+    full_msgs = add_chksum_info_tochunks(string_list, user, chunk_type)
+    print('full msgs: ', full_msgs)   
+    return full_msgs
