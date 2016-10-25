@@ -1,4 +1,4 @@
-//import uasyncio as asyncio
+import uasyncio as asyncio
 import ujson as json
 import utime as time
 import select
@@ -19,6 +19,7 @@ class Comm:
         self.output_q = asyncio.Queue() #q for pieced together messages
         self.coro_queue = asyncio.PriorityQueue()
         self.kv_queue = asyncio.KVQueue(maxsize = 512)
+        self.sense_queue = asyncio.KVQueue(maxsize = 32)
         # callback for extint
         def cb(line):
             #print('irq called: ', line)
@@ -63,6 +64,8 @@ class Q_Item:
         return str(self.x)        
 
 def datetime_diff(dt1, dt2):
+    """given two datetime objects, return the difference
+    between them in milliseconds"""
     minutes = dt2[5] - dt1[5]
     seconds = dt2[6] - dt1[6]    
     part_seconds = (255-dt2[7]) - (255-dt1[7])
@@ -70,7 +73,8 @@ def datetime_diff(dt1, dt2):
     return millis_elapsed
 
 def handle_stdin(comm,loop):
-    ##print('data arrived')
+    """event handler to read incoming messages from serial port
+    and place them on the communication queue"""
     waiting = comm.uart.inWaiting()
     data = comm.uart.read(waiting)
     for byt in data:
@@ -80,11 +84,13 @@ def handle_stdin(comm,loop):
             print(e,'queue is full')
     del data
     #gc.collect()
-    loop.remove_reader(comm.uart.fd)
+    loop.remove_reader(comm.uart.fd) # polling is one-shot so we want to remove and add file descriptor
+    #after each time the event handler is triggered
     loop.add_reader(comm.uart.fd, handle_stdin, comm, loop)
 
 def handle_accel(comm, loop):
-    ##print('accel arrived')
+    """event handler to read incoming acceleration sensor
+    data  from serial port and place it on the accel q"""
     while comm.accel.inWaiting()<4095:
         time.sleep(0.05)
         ##print('waiting for buffer to fill')
@@ -99,7 +105,6 @@ def handle_accel(comm, loop):
     loop.remove_reader(comm.accel.fd)
     #loop.remove_reader(comm.accel.fd)
     #loop.add_reader(comm.accel.fd, handle_accel, comm, loop)
-  
 class ControlTasks:
     SLEEP_READY = 0
     BUSY = 1
@@ -120,9 +125,30 @@ class ControlTasks:
         #self.rtc = pyb.RTC()
         self.sleep_handlers = {ControlTasks.IDLE_SLEEP: self.idle_sleep, ControlTasks.DEEP_SLEEP: self.deep_sleep} 
         self.completed_msgs = {}
-
+    def package(self, job_class, time_received, user):
+        #======================#sense stage#======================#    
+        exec_time, curried_runfunc = self.package_senser(job_class.sampler,
+                                                         time_received, user)
+        curried_runfunc['sense_nodes'] = job_class.sensenodes
+        #=======================#map stage#=======================#
+        map_func, map_arg = self.package_function(job_class.mapper)
+        curried_runfunc['map_func'] = map_func
+        curried_runfunc['map_arg'] = map_arg
+        curried_runfunc['num_mappers'] = len(job_class.mapnodes)
+        curried_runfunc['map_nodes'] = job_class.mapnodes
+        #======================#reduce stage#=====================#
+        reduce_func, reduce_arg = self.package_reducer(job_class.reducer)
+        curried_runfunc['reduce_func'] = reduce_func
+        curried_runfunc['reduce_arg'] = reduce_arg
+        curried_runfunc['reduce_node'] = job_class.reducenodes[0]
+        return exec_time, curried_runfunc
     @asyncio.coroutine
-    def accelpacketyielder(self):   
+    def accelpacketyielder(self): 
+        """coroutine which consumes acceleration data from the accelq
+        performs cyclic redundancy checking to identify valid packets
+        from the stream of data coming from the accelq. Once a valid packet is 
+        found we return formatted triaxial accel data in the form of a list of 3 lists,
+        one for each axis, with values in gs"""  
         packet = bytes()
         crc = crc32.CRC32()
         while True:
@@ -172,11 +198,12 @@ class ControlTasks:
         #trx = self.comm.ZBee.send('tx', data=bytes( json.dumps({'update':'awake'}), 'ascii' ), dest_addr_long=self.comm.address_book['Server'], dest_addr=b'\xff\xfe')
         return 0
   
-    def deep_sleep(self, sleep_time): #put board to sleep, and count how long it was asleep for
-        print('sleep_time is: ', sleep_time)
-        #just make sure the conditions are true - yield from sleep could result in this func being called after a comp task has begun
+    def deep_sleep(self, sleep_time):
+        """function puts board into sleepmode,for sleep_time milliseconds. Before entering sleepmode we store any
+        current state on disk, to be reloaded upon wakeup"""
         if self.in_map or self.comm.queue.qsize()>0: 
-            return 0
+            return 0#just make sure the conditions are true - yield from sleep
+        #could result in this func being called after a comp task has begun
         coro_q_list = []
         for q_item in self.comm.coro_queue._queue:
             t = q_item[0]
@@ -207,23 +234,35 @@ class ControlTasks:
     
     def sleep(self, sleep_for):
         """ look up what the current sleep_mode setting is and call the appropriate sleep for the given time"""
-        #print('sleep mode is: ', self.sleep_mode)
         t =  self.sleep_handlers[self.sleep_mode](sleep_for)
         return t
         
-    def package_function(self,mapper, exec_time,user ):
+    def package_function(self,mapper):
+        """given a mapper function to be executed at exec time, sent
+        by user, package this function so it's ready to be added to the q"""
         @asyncio.coroutine
-        def run_func(mapp):
+        def run_func(mapp, data):
             self.in_map = True
-            for j in mapp(self):
+            for j in mapp(self, data):
                     yield j
                     yield from asyncio.sleep(0.1) #allow to check for input
             self.in_map = False
         #exec(source_code) 
-        curried_runfunc = {'func':run_func,'arg': mapper,'u':user } #a dict because micropython doesnt like currying a generator    
-        return exec_time, curried_runfunc
+        #curried_runfunc = {'func':run_func,'arg': mapper,'u':user } #a dict because micropython doesnt like currying a generator    
+        return run_func, mapper
     
-    def package_reducer(self, reducer):#need to make sure this is also saved and redone on deep sleep mode
+    def package_senser(self, senser, exec_time, user):
+        @asyncio.coroutine
+        def sense(senss):
+            self.in_map = True
+            result = yield from senss(self)
+            self.in_map = False
+            return result
+        curried_senser = {'func':run_func,'arg': senser,'u':user }
+        return exec_time, curried_senser
+
+    def package_reducer(self, reducer):#TODOneed to make sure this is also saved and redone on deep sleep mode
+        """given a reducer function package this function so it's ready to be added to the q"""
         @asyncio.coroutine
         def reduce_func(reducc, key,values):
             self.in_map = True
@@ -236,6 +275,8 @@ class ControlTasks:
         #curried_runfunc = {'reduce_func':reduce_func,'arg': (locals()['reducer']) }    
     
     def class_definer(self, source_code):
+        """given the user specified source code for the
+        SenseReduce class, create this class from the string of code"""
         exec(source_code)
         job_class = locals()['SenseReduce']()
         return job_class
@@ -247,6 +288,9 @@ class ControlTasks:
                                                                self.comm.output_q)
     @asyncio.coroutine
     def send_and_wait(self, byte_chunk, addr):
+        """given a chunk of a message to send to addr
+        send the chunk, and then wait for confirmation that
+        the message has sent before returning"""
         frame_id = self.comm.id_counter()
         yield from self.comm.writer.network_awrite(byte_chunk, addr, frame_id)
         status = yield from self.check_acknowledged(frame_id)
@@ -259,7 +303,14 @@ class ControlTasks:
             yield from asyncio.sleep(1)
             print('trying again: ', frame_id)
             yield from self.send_and_wait(byte_chunk, addr)
-        
+    @asyncio.coroutine
+    def node_to_node(self, message, address):
+        self_address = self.comm.address_book[self.comm.ID]
+        if address == self_address:
+            pass #this should be a function that takes the message
+            #and puts it on the appropriate queue
+        else:
+            yield from self.network_awrite_chunked(message, address)        
     @asyncio.coroutine
     def network_awrite_chunked(self, buf, addr):
         """
@@ -283,6 +334,8 @@ class ControlTasks:
         
     @asyncio.coroutine
     def check_acknowledged(self, msg_id):
+        """check if the message associated with msg_id was 
+        acknowledged"""
         while msg_id not in self.completed_msgs:
             #print(msg_id,'not ack yet: ',  self.completed_msgs)
             yield from asyncio.sleep(0.2)
@@ -310,15 +363,7 @@ class ControlTasks:
                         every = job_class.every
                     except:
                         every = 0
-                    num_mappers = len(job_class.mapnodes)
-                    exec_time, curried_runfunc = self.package_function(job_class.mapper,
-                                                                       time_received, user)
-                    reduce_func, reduce_arg = self.package_reducer(job_class.reducer)
-                    curried_runfunc['reduce_func'] = reduce_func
-                    curried_runfunc['reduce_arg'] = reduce_arg
-                    curried_runfunc['num_mappers'] = num_mappers
-                    curried_runfunc['reduce_node'] = job_class.reducenodes[0]
-                    ##print(exec_time, curried_runfunc)
+                    exec_time, curried_runfunc = self.package(job_class, time_received, user)
                     #put the coroutine on the queue, as many times as neccesary- first one straight away presumably
                     i = 0
                     self.comm.coro_queue.put_nowait((exec_time, curried_runfunc))
@@ -330,49 +375,71 @@ class ControlTasks:
                         yield from self.comm.coro_queue.put((exec_time, curried_runfunc))
                         i+=1
                 except (KeyError, ValueError) as e:
-                    #key value pair rather than request
-                    kv_pair = data['kv']
-                    ##print('got a kv pair: ', kv_pair, data['u'])
-                    self.comm.kv_queue.put_nowait((Q_Item(kv_pair[0]), kv_pair[1]), data['u'])    
+                    #key value pair or sensing data rather than request
+                    try:
+                        kv_pair = data['kv']
+                        self.comm.kv_queue.put_nowait((Q_Item(kv_pair[0]), kv_pair[1]), data['u'])
+                    except KeyError:
+                        sense_data = data['s']
+                        self.comm.sense_queue.put_nowait(sense_data, data['u'])    
             except (KeyError, ValueError) as e:
                 ##print('key error, ack??',msg)
                 if msg['id'] =='tx_status':
                     ##print('ack')
-                    self.acknowledge(msg)                                              
+                    self.acknowledge(msg)
+
     @asyncio.coroutine
     def worker(self):
         """
-        currently reduce node must also be a map node
-        Little bit messy.
         """
         while True:
-            ##print('got to worker')
-            coro = yield from self.comm.coro_queue.get()
-            #print('got a coro: ', coro,self.eventloop.time())       
+            coro = yield from self.comm.coro_queue.get()     
             if coro[0] < self.eventloop.time():
                 self.in_map = True
                 curried_func = coro[1]
-                gen = curried_func['func'](curried_func['arg']) #generator function
-                job_nodeid = str(self.ID)+curried_func['u']#curried_func['u']#
-                just_jobid = curried_func['u']
-                for j in gen:
-                    if isinstance(j, asyncio.Sleep):
-                        yield j
+                if self.comm.ID in curried_func['sense_nodes']:
+                    #acquire data using sense func
+                    sense_func = curried_func['func']
+                    data = sense_func(curried_func['arg'])
+                    job_nodeid = str(self.ID)+curried_func['u']
+                    just_jobid = curried_func['u']
+                    child_node_idx = curried_func['sense_nodes'].index(self.comm.ID)
+                    child_node = curried_func['map_nodes'][child_node_idx]
+                    if child_node == self.comm.ID:
+                        yield from self.comm.sense_queue.put(data, just_jobid)
                     else:
-                        if j is not None:
-                            #result = bytes( json.dumps({'kv_pair':j}), 'ascii' )
-                            result = {'kv':j,'u':job_nodeid} 
-                            if curried_func['reduce_node']==self.comm.ID:
-                                yield from self.comm.kv_queue.put((Q_Item(j[0]),
-                                                                   j[1]), 
-                                                                   just_jobid)
-                            else:
-                                yield from self.network_awrite_chunked(result,
-                                                                       self.comm.address_book[curried_func['reduce_node']])
-                # notify end of map function to reduce node
-                #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
-                end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
-                if curried_func['reduce_node']==self.comm.ID:
+                        send_ready = {'s':data, 'u':just_jobid}
+                        yield from self.network_awrite_chunked(send_ready,
+                                                               self.comm.address_book[child_node])
+
+                if self.comm.ID in curried_func['map_nodes']:
+                    data = yield from self.comm.sense_queue.get(just_jobid)
+                    gen = curried_func['map_func'](curried_func['map_arg'], data) #generator function
+                    job_nodeid = str(self.ID)+curried_func['u']#curried_func['u']#
+                    just_jobid = curried_func['u']
+                    for j in gen:
+                        if isinstance(j, asyncio.Sleep):
+                            yield j
+                        else:
+                            if j is not None:
+                                #result = bytes( json.dumps({'kv_pair':j}), 'ascii' )
+                                result = {'kv':j,'u':job_nodeid} 
+                                if curried_func['reduce_node']==self.comm.ID:
+                                    yield from self.comm.kv_queue.put((Q_Item(j[0]),
+                                                                       j[1]), just_jobid)
+                                else:
+                                    reduce_dest = self.comm.address_book[curried_func['reduce_node']]
+                                    yield from self.network_awrite_chunked(result, reduce_dest)
+                    # notify end of map function to reduce node
+                    #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
+                    end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
+                if curried_func['reduce_node']!=self.comm.ID:
+                    #job is done here, because mapper is not a reducer
+                    yield from self.network_awrite_chunked(end_message,
+                                                           self.comm.address_book[curried_func['reduce_node']])
+                    print('map only finished')
+                    self.in_map = False
+                else:
                     #if this is also a reduce node
                     yield from self.comm.kv_queue.put((Q_Item("MAP_DONE") , 0),
                                                        just_jobid)
@@ -382,16 +449,13 @@ class ControlTasks:
                     yield from self.reduce_worker(reduce_controller, 
                                                   reduce_logic,
                                                   curried_func['num_mappers'],
-                                                  just_jobid)     
-                else:    
-                    yield from self.network_awrite_chunked(end_message,
-                                                           self.comm.address_book[curried_func['reduce_node']])
-                    print('map only finished')
-                    self.in_map = False                                                 
+                                                  just_jobid)                                                     
             else:   
                 yield from self.comm.coro_queue.put(coro)
                 yield from asyncio.sleep(0)
-    
+    @asyncio.coroutine
+    def map_worker(map_controller, map_worker, map_data, just_jobid, job_nodeid):
+        return
     #@asyncio.coroutine
     def get_groupedby(self,q):
         first_pair = q.get_nowait()
@@ -477,7 +541,6 @@ class ControlTasks:
          #exit so we can check messages
     @asyncio.coroutine
     def sleep_manager(self):
-
         handler_funcs = {ControlTasks.BUSY: self.allow_read_data,
                      ControlTasks.BETWEEN_FUNCS: self.sleep_until_scheduled,
                      ControlTasks.SLEEP_READY: self.regular_sleep}         
@@ -508,7 +571,7 @@ def initialise():
     loop.add_reader(comm.uart.fd, handle_stdin, comm, loop)
     # check for previous state before standby
     f = open('/etc/init.d/sensereduce/log/state_before_standby.txt', 'r')
-    state_dict = json.loads( f.read() )
+    state_dict = json.loads(f.read())
     f.close()
     # trx = comm.ZBee.send('tx', data=bytes(json.dumps(len(state_dict)), 'ascii'), dest_addr_long=comm.addr, dest_addr=b'\xff\xfe')
     try:
@@ -527,19 +590,12 @@ def initialise():
             source = func_item[1]
             user = func_item[2]
             job_class = controller.class_definer(source)
-            t, curried_runfunc = controller.package_function(job_class.mapper, exec_time, user)
-            reduce_func, reduce_arg = controller.package_reducer(job_class.reducer)
-            curried_runfunc['reduce_func'] = reduce_func
-            curried_runfunc['reduce_arg'] = reduce_arg
-            curried_runfunc['num_mappers'] = 1
-            curried_runfunc['reduce_node'] = job_class.reduce_node_addr
-            curried_func['source'] = source
+            t, curried_runfunc = controller.package(job_class, exec_time, user)
             comm.coro_queue.put_nowait((t, curried_func))
             # trx = comm.ZBee.send('tx', data=bytes(json.dumps({'exec time':exec_time}), 'ascii'), dest_addr_long=comm.addr, dest_addr=b'\xff\xfe')
             # trx = comm.ZBee.send('tx', data=bytes(json.dumps({'loop time':controller.eventloop.time()}), 'ascii'), dest_addr_long=comm.addr, dest_addr=b'\xff\xfe')        
     except KeyError:
         print('KeyError: State information was empty')
-        
     return comm, controller                    
 def main(): 
     comm, controller = initialise()
