@@ -20,6 +20,7 @@ class Comm:
         self.coro_queue = asyncio.PriorityQueue()
         self.kv_queue = asyncio.KVQueue(maxsize = 512)
         self.sense_queue = asyncio.KVQueue(maxsize = 32)
+        self.f_queue = asyncio.KVQueue(maxsize = 1024)
         # callback for extint
         def cb(line):
             #print('irq called: ', line)
@@ -233,7 +234,8 @@ class ControlTasks:
     
     
     def sleep(self, sleep_for):
-        """ look up what the current sleep_mode setting is and call the appropriate sleep for the given time"""
+        """ look up what the current sleep_mode setting is
+         and call the appropriate sleep for the given time"""
         t =  self.sleep_handlers[self.sleep_mode](sleep_for)
         return t
         
@@ -254,9 +256,7 @@ class ControlTasks:
     def package_senser(self, senser, exec_time, user):
         @asyncio.coroutine
         def sense(senss):
-            self.in_map = True
             result = yield from senss(self)
-            self.in_map = False
             return result
         curried_senser = {'func':run_func,'arg': senser,'u':user }
         return exec_time, curried_senser
@@ -307,8 +307,9 @@ class ControlTasks:
     def node_to_node(self, message, address):
         self_address = self.comm.address_book[self.comm.ID]
         if address == self_address:
-            pass #this should be a function that takes the message
-            #and puts it on the appropriate queue
+            if 'kv' in message:
+                message['u'] = message['u'][2::]#don't need nodeid concat
+            self.message_to_queue(message)
         else:
             yield from self.network_awrite_chunked(message, address)        
     @asyncio.coroutine
@@ -341,53 +342,66 @@ class ControlTasks:
             yield from asyncio.sleep(0.2)
         status = self.completed_msgs[msg_id]
         del self.completed_msgs[msg_id]
-        return status 
-             
-    @asyncio.coroutine    
-    def function_definer(self):
+        return status
+    def f_to_queue(self, data):
+        self.comm.f_queue.put_nowait(data)
+    def s_to_queue(self, data): 
+        self.comm.s_queue.put_nowait(data['s'], data['u'])
+    def kv_to_queue(self, data):
+        kv_pair = data['kv'] 
+        self.comm.kv_queue.put_nowait((Q_Item(kv_pair[0]), kv_pair[1]), data['u'])
+    def message_to_queue(self, data):
+        queue_map = {'f':self.f_to_queue,
+                     'kv':self.s_to_queue,
+                     's':self.kv_to_queue}
+        matches = [k for k in data if k in queue_map]
+        for key in matches:
+            queue_map[key](data)    
+    @asyncio.coroutine
+    def queue_placer(self):
+        """consume messages from output q and put it
+        on the appropriate q depending on the data type,
+        kv, s, or f"""
         while True:
             msg = yield from self.comm.output_q.get()
-            print('got a message: ', msg)
             try:
                 data = json.loads(msg['rf_data'])
-                time_received = self.eventloop.time()
-                try: 
-                    class_def = data['f']
-                    user = data['u']
-                    job_class = self.class_definer(class_def)
-                    try:
-                        repeat = job_class.repeat
-                    except AttributeError:
-                        repeat = 0
-                    try:
-                        every = job_class.every
-                    except:
-                        every = 0
-                    exec_time, curried_runfunc = self.package(job_class, time_received, user)
-                    #put the coroutine on the queue, as many times as neccesary- first one straight away presumably
-                    i = 0
-                    self.comm.coro_queue.put_nowait((exec_time, curried_runfunc))
-                    print('put it on the q', user)
-                    while i<repeat:
-                        exec_time = time_received+(i+1)*every
-                        curried_runfunc['source'] = class_def
-                        # store the source code in case we enter standby before execution
-                        yield from self.comm.coro_queue.put((exec_time, curried_runfunc))
-                        i+=1
-                except (KeyError, ValueError) as e:
-                    #key value pair or sensing data rather than request
-                    try:
-                        kv_pair = data['kv']
-                        self.comm.kv_queue.put_nowait((Q_Item(kv_pair[0]), kv_pair[1]), data['u'])
-                    except KeyError:
-                        sense_data = data['s']
-                        self.comm.sense_queue.put_nowait(sense_data, data['u'])    
-            except (KeyError, ValueError) as e:
-                ##print('key error, ack??',msg)
-                if msg['id'] =='tx_status':
-                    ##print('ack')
-                    self.acknowledge(msg)
-
+                self.message_to_queue(data)
+            except (KeyError, ValueError) as e:##no rf_data
+                if msg['id'] == 'tx_status':
+                    self.acknowledge(msg)      
+    @asyncio.coroutine    
+    def function_definer(self):
+    """consumes function definitions from the f_queue,
+    defines them, and puts them on the coro queue"""
+        while True:
+            data = yield from self.comm.f_queue.get()
+            print('got a function: ', data)
+            time_received = self.eventloop.time()
+            class_def = data['f']
+            user = data['u']
+            job_class = self.class_definer(class_def)
+            try:
+                repeat = job_class.repeat
+            except AttributeError:
+                repeat = 0
+            try:
+                every = job_class.every
+            except:
+                every = 0
+            exec_time, curried_runfunc = self.package(job_class, time_received, user)
+            #put the coroutine on the queue, as many times as neccesary- first one straight away presumably
+            i = 0
+            self.comm.coro_queue.put_nowait((exec_time, curried_runfunc))
+            print('put it on the q', user)
+            while i<repeat:
+                exec_time = time_received+(i+1)*every
+                curried_runfunc['source'] = class_def
+                # store the source code in case we enter standby before execution
+                yield from self.comm.coro_queue.put((exec_time, curried_runfunc))
+                i+=1
+    def add_id(self, user):
+        return str(self.comm.ID)+user
     @asyncio.coroutine
     def worker(self):
         """
@@ -399,62 +413,42 @@ class ControlTasks:
                 curried_func = coro[1]
                 if self.comm.ID in curried_func['sense_nodes']:
                     #acquire data using sense func
-                    sense_func = curried_func['func']
-                    data = sense_func(curried_func['arg'])
-                    job_nodeid = str(self.ID)+curried_func['u']
-                    just_jobid = curried_func['u']
-                    child_node_idx = curried_func['sense_nodes'].index(self.comm.ID)
-                    child_node = curried_func['map_nodes'][child_node_idx]
-                    if child_node == self.comm.ID:
-                        yield from self.comm.sense_queue.put(data, just_jobid)
-                    else:
-                        send_ready = {'s':data, 'u':just_jobid}
-                        yield from self.network_awrite_chunked(send_ready,
-                                                               self.comm.address_book[child_node])
-
+                    yield from self.sense_worker(curried_func)
                 if self.comm.ID in curried_func['map_nodes']:
                     data = yield from self.comm.sense_queue.get(just_jobid)
-                    gen = curried_func['map_func'](curried_func['map_arg'], data) #generator function
-                    job_nodeid = str(self.ID)+curried_func['u']#curried_func['u']#
-                    just_jobid = curried_func['u']
-                    for j in gen:
-                        if isinstance(j, asyncio.Sleep):
-                            yield j
-                        else:
-                            if j is not None:
-                                #result = bytes( json.dumps({'kv_pair':j}), 'ascii' )
-                                result = {'kv':j,'u':job_nodeid} 
-                                if curried_func['reduce_node']==self.comm.ID:
-                                    yield from self.comm.kv_queue.put((Q_Item(j[0]),
-                                                                       j[1]), just_jobid)
-                                else:
-                                    reduce_dest = self.comm.address_book[curried_func['reduce_node']]
-                                    yield from self.network_awrite_chunked(result, reduce_dest)
-                    # notify end of map function to reduce node
-                    #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
-                    end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
-                if curried_func['reduce_node']!=self.comm.ID:
-                    #job is done here, because mapper is not a reducer
-                    yield from self.network_awrite_chunked(end_message,
-                                                           self.comm.address_book[curried_func['reduce_node']])
-                    print('map only finished')
-                    self.in_map = False
-                else:
-                    #if this is also a reduce node
-                    yield from self.comm.kv_queue.put((Q_Item("MAP_DONE") , 0),
-                                                       just_jobid)
-                    ##print('put map done on the q', self.comm.kv_queue._qs)
-                    reduce_controller = curried_func['reduce_func']
-                    reduce_logic = curried_func['reduce_arg']
-                    yield from self.reduce_worker(reduce_controller, 
-                                                  reduce_logic,
-                                                  curried_func['num_mappers'],
-                                                  just_jobid)                                                     
+                    yield from map_worker(curried_func, data)
+                if curried_func['reduce_node']==self.comm.ID:
+                    yield from self.reduce_worker(curried_func)
+                self.in_map = False                                                   
             else:   
                 yield from self.comm.coro_queue.put(coro)
                 yield from asyncio.sleep(0)
     @asyncio.coroutine
-    def map_worker(map_controller, map_worker, map_data, just_jobid, job_nodeid):
+    def sense_worker(self, curried_func):
+        data = yield from curried_func['func'](curried_func['arg'])
+        message = {'s':data, 'u':curried_func['u']}
+        mapper_idx = curried_func['sense_nodes'].index(self.comm.ID)
+        child_node = curried_func['map_nodes'][mapper_idx]
+        yield from self.node_to_node(message, child_node)
+    @asyncio.coroutine
+    def map_worker(self, curried_func, map_data):
+        data = yield from self.comm.sense_queue.get(curried_func['u'])
+        reduce_dest = self.comm.address_book[curried_func['reduce_node']]
+        job_nodeid = self.add_id(curried_func['u']) 
+        gen = curried_func['map_func'](curried_func['map_arg'], map_data) #generator function
+        for j in gen:
+            if isinstance(j, asyncio.Sleep):
+                yield j
+            else:
+                if j is not None:
+                    #result = bytes( json.dumps({'kv_pair':j}), 'ascii' )
+                    result = {'kv':j,'u':job_nodeid}
+                    yield from self.node_to_node(result, reduce_dest)
+            # notify end of map function to reduce node
+            #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
+        end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
+        yield from self.node_to_node(end_message, reduce_dest)
+        self.comm.sense_queue.remove(curried_func['u'])       
         return
     #@asyncio.coroutine
     def get_groupedby(self,q):
@@ -475,7 +469,11 @@ class ControlTasks:
         return list_kv_pairs,key
     
     @asyncio.coroutine
-    def reduce_worker(self,reduce_controller, reduce_logic, num_mappers,user):
+    def reduce_worker(self,curried_func):
+        user = curried_func['u']
+        reduce_controller = curried_func['reduce_func']
+        reduce_logic = curried_func['reduce_arg']
+        num_mappers = curried_func['num_mappers']
         i = 0
         #check if all num_mappers have given a map_done message
         results = {}
@@ -508,10 +506,10 @@ class ControlTasks:
         result_tx =  {'res':results,'u':user}
         print('reduce finished: ', result_tx)
         #return to sink node
-        yield from self.network_awrite_chunked(result_tx, self.comm.address_book['Server'])
+        yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
         print('map-reduce finished')
-        self.comm.kv_queue.remove(user)
-        self.in_map = False          
+        self.comm.kv_queue.remove(user) 
+        return
                 
     @asyncio.coroutine
     def allow_read_data(self):
