@@ -347,7 +347,7 @@ class ControlTasks:
     def f_to_queue(self, data):
         self.comm.f_queue.put_nowait(data)
     def s_to_queue(self, data): 
-        self.comm.s_queue.put_nowait(data['s'], data['u'])
+        self.comm.sense_queue.put_nowait(data['s'], data['u'])
     def kv_to_queue(self, data):
         print('data in kvtoq: ', data)
         kv_pair = data['kv'] 
@@ -414,12 +414,19 @@ class ControlTasks:
                 self.in_map = True
                 curried_func = coro[1]
                 if self.comm.ID in curried_func['sense_nodes']:
+                    print('starting sampler')
                     yield from self.sense_worker(curried_func)
+                    print('finished sampler')
                 if self.comm.ID in curried_func['map_nodes']:
-                    data = yield from self.comm.sense_queue.get(just_jobid)
-                    yield from map_worker(curried_func, data)
+                    print('starting mapper')
+                    data = yield from self.comm.sense_queue.get(curried_func['u'])
+                    print('got data')
+                    yield from self.map_worker(curried_func, data)
+                    print('finished mapper')
                 if curried_func['reduce_node']==self.comm.ID:
+                    print('reducing')
                     yield from self.reduce_worker(curried_func)
+                    print('reduced')
                 self.in_map = False                                                   
             else:   
                 yield from self.comm.coro_queue.put(coro)
@@ -433,7 +440,6 @@ class ControlTasks:
         yield from self.node_to_node(message, self.comm.address_book[child_node])
     @asyncio.coroutine
     def map_worker(self, curried_func, map_data):
-        data = yield from self.comm.sense_queue.get(curried_func['u'])
         reduce_dest = self.comm.address_book[curried_func['reduce_node']]
         job_nodeid = self.add_id(curried_func['u']) 
         gen = curried_func['map_func'](curried_func['map_arg'], map_data) #generator function
