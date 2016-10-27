@@ -20,7 +20,7 @@ class Comm:
         self.coro_queue = asyncio.PriorityQueue()
         self.kv_queue = asyncio.KVQueue(maxsize = 512)
         self.sense_queue = asyncio.KVQueue(maxsize = 32)
-        self.f_queue = asyncio.KVQueue(maxsize = 1024)
+        self.f_queue = asyncio.Queue()
         # callback for extint
         def cb(line):
             #print('irq called: ', line)
@@ -258,7 +258,7 @@ class ControlTasks:
         def sense(senss):
             result = yield from senss(self)
             return result
-        curried_senser = {'func':run_func,'arg': senser,'u':user }
+        curried_senser = {'func':sense,'arg': senser,'u':user }
         return exec_time, curried_senser
 
     def package_reducer(self, reducer):#TODOneed to make sure this is also saved and redone on deep sleep mode
@@ -308,6 +308,7 @@ class ControlTasks:
         self_address = self.comm.address_book[self.comm.ID]
         if address == self_address:
             if 'kv' in message:
+                print(message)
                 message['u'] = message['u'][2::]#don't need nodeid concat
             self.message_to_queue(message)
         else:
@@ -348,12 +349,13 @@ class ControlTasks:
     def s_to_queue(self, data): 
         self.comm.s_queue.put_nowait(data['s'], data['u'])
     def kv_to_queue(self, data):
+        print('data in kvtoq: ', data)
         kv_pair = data['kv'] 
         self.comm.kv_queue.put_nowait((Q_Item(kv_pair[0]), kv_pair[1]), data['u'])
     def message_to_queue(self, data):
         queue_map = {'f':self.f_to_queue,
-                     'kv':self.s_to_queue,
-                     's':self.kv_to_queue}
+                     'kv':self.kv_to_queue,
+                     's':self.s_to_queue}
         matches = [k for k in data if k in queue_map]
         for key in matches:
             queue_map[key](data)    
@@ -372,8 +374,8 @@ class ControlTasks:
                     self.acknowledge(msg)      
     @asyncio.coroutine    
     def function_definer(self):
-    """consumes function definitions from the f_queue,
-    defines them, and puts them on the coro queue"""
+        """consumes function definitions from the f_queue,
+        defines them, and puts them on the coro queue"""
         while True:
             data = yield from self.comm.f_queue.get()
             print('got a function: ', data)
@@ -412,7 +414,6 @@ class ControlTasks:
                 self.in_map = True
                 curried_func = coro[1]
                 if self.comm.ID in curried_func['sense_nodes']:
-                    #acquire data using sense func
                     yield from self.sense_worker(curried_func)
                 if self.comm.ID in curried_func['map_nodes']:
                     data = yield from self.comm.sense_queue.get(just_jobid)
@@ -429,7 +430,7 @@ class ControlTasks:
         message = {'s':data, 'u':curried_func['u']}
         mapper_idx = curried_func['sense_nodes'].index(self.comm.ID)
         child_node = curried_func['map_nodes'][mapper_idx]
-        yield from self.node_to_node(message, child_node)
+        yield from self.node_to_node(message, self.comm.address_book[child_node])
     @asyncio.coroutine
     def map_worker(self, curried_func, map_data):
         data = yield from self.comm.sense_queue.get(curried_func['u'])
@@ -501,8 +502,6 @@ class ControlTasks:
                             ##print('got a result from reducer! ', j)
                             results[key] = j[1]
         #reduce is now finished on all pairs of key, values
-        
-        #result_tx = bytes(json.dumps ( {'res':json.dumps(results),'u':user} ), 'ascii')
         result_tx =  {'res':results,'u':user}
         print('reduce finished: ', result_tx)
         #return to sink node
@@ -597,8 +596,8 @@ def initialise():
     return comm, controller                    
 def main(): 
     comm, controller = initialise()
-    tasks = [controller.radio_listener(), controller.function_definer(),
-             controller.worker(), controller.sleep_manager()]
+    tasks = [controller.radio_listener(), controller.queue_placer(),
+             controller.function_definer(), controller.worker(), controller.sleep_manager()]
     for task in tasks:
         controller.eventloop.call_soon(task)
     #controller.eventloop.call_later(1800, loop_stopper())
