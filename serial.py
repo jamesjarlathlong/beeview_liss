@@ -33,7 +33,7 @@ class Serial:
         self.fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY)
         termios.setraw(self.fd)
         iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(self.fd)
-        print("tcgetattr result:", iflag, oflag, cflag, lflag, ispeed, ospeed, cc)
+        #print("tcgetattr result:", iflag, oflag, cflag, lflag, ispeed, ospeed, cc)
         baudrate = self.BAUD_MAP[self.baudrate]
         termios.tcsetattr(self.fd, termios.TCSANOW, [iflag, oflag, cflag, lflag, baudrate, baudrate, cc])
 
