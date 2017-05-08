@@ -230,7 +230,7 @@ class ControlTasks:
             current_state['rtc'] = before_sleep_eventloop
             current_state['looptime'] = before_sleep_eventloop
             current_state['coro_q'] = coro_q_list
-        f = open('/etc/init.d/sensereduce/log/state_before_standby.txt', 'w')    
+        f = open('/etc/init.d/beeview_liss/log/state_before_standby.txt', 'w')    
         f.write(json.dumps(current_state) )
         print(json.dumps(current_state) )      
         f.close()
