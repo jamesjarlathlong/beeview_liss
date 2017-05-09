@@ -20,5 +20,5 @@ def atap_command(t):
 	else:
 		print('oops, try again')
 if __name__ == '__main__':
-	t = sys.argv[1]
+	t = float(sys.argv[1])
 	atap_command(t)
