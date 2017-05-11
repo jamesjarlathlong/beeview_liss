@@ -230,11 +230,14 @@ class ControlTasks:
             current_state['rtc'] = before_sleep_eventloop
             current_state['looptime'] = before_sleep_eventloop
             current_state['coro_q'] = coro_q_list
-        f = open('/etc/init.d/beeview_liss/log/state_before_standby.txt', 'w')    
-        f.write(json.dumps(current_state) )
-        print(json.dumps(current_state) )      
-        f.close()
-        print('closed')
+        try:
+            f = open('/etc/init.d/beeview_liss/log/state_before_standby.txt', 'w')    
+            f.write(json.dumps(current_state) )
+            print(json.dumps(current_state) )      
+            f.close()
+            print('closed')
+        except:
+            pass
         time.sleep(sleep_time)
         #trx = self.comm.ZBee.send('tx', data=bytes( json.dumps({'update':'entering deep sleep'}), 'ascii' ), dest_addr_long=self.comm.address_book['Server'], dest_addr=b'\xff\xfe') 
         #trx = self.comm.ZBee.send('tx', data=bytes( json.dumps({'update':'awake'}), 'ascii' ), dest_addr_long=self.comm.address_book['Server'], dest_addr=b'\xff\xfe')
@@ -598,9 +601,12 @@ def initialise():
     controller = ControlTasks(loop, comm)
     loop.add_reader(comm.uart.fd, handle_stdin, comm, loop)
     # check for previous state before standby
-    f = open('/etc/init.d/sensereduce/log/state_before_standby.txt', 'r')
-    state_dict = json.loads(f.read())
-    f.close()
+    try:
+        f = open('/etc/init.d/beeview_liss/log/state_before_standby.txt', 'r')
+        state_dict = json.loads(f.read())
+        f.close()
+    except:
+        state_dict = {}
     # trx = comm.ZBee.send('tx', data=bytes(json.dumps(len(state_dict)), 'ascii'), dest_addr_long=comm.addr, dest_addr=b'\xff\xfe')
     try:
         controller.sleep_mode = state_dict['sleep_mode']
