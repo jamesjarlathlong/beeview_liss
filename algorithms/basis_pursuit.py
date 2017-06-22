@@ -68,8 +68,9 @@ def solve_basis_pursuit(A, signal):
 	l1s = create_l1_constraints(the_vars)
 	equalities = create_basis_constraints(signal, A, the_vars)
 	all_constraints = l1s+equalities
-	Lp_system = simplex.Simplex(num_vars=len(the_vars), constraints=all_constraints, objective_function=('minimize', obj_fun))
-	return Lp_system
+	res, sol = linsolve(objective, ineq_left = ineq_left, ineq_right = ineq_right,
+						 eq_left = eq_left, eq_right = eq_right, nonneg_variables = dummies)
+	return sol
 if __name__ == '__main__':
 	signal = [1, 2, 15]
 	A = [[11,12,13]
