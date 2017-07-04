@@ -9,7 +9,23 @@ import os
 import crc32
 import accelreader
 import networking
-
+from algorithms import np
+import urandom
+def timeit(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+        ex_time = te-ts
+        return ex_time,result
+    return timed
+@timeit
+def benchmark1(size):
+    def vec(size):
+        return [urandom.getrandbits(8) for i in range(size)]    
+    mat = [vec(size) for i in range(size)]
+    vec = np.Vector(*vec(size))
+    return vec.matrix_mult(mat)
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -372,10 +388,19 @@ class ControlTasks:
         except KeyError:
             status = 'timed out'
         return status
+    @asyncio.coroutine
+    def benchmark(self, data):
+        t, res = benchmark1(data)
+        self.most_recent_benchmark = t
+        result_tx =  {'res':(1,t),'u':self.add_id('benchmark'+str(data))}
+        yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+
     def f_to_queue(self, data):
         self.comm.f_queue.put_nowait(data)
     def s_to_queue(self, data): 
         self.comm.sense_queue.put_nowait(data['s'], data['u'])
+    def bm_to_queue(self, data):
+        yield from self.benchmark(data)
     def kv_to_queue(self, data):
         print('data in kvtoq: ', data)
         kv_pair = data['kv'] 
@@ -383,7 +408,8 @@ class ControlTasks:
     def message_to_queue(self, data):
         queue_map = {'f':self.f_to_queue,
                      'kv':self.kv_to_queue,
-                     's':self.s_to_queue}
+                     's':self.s_to_queue
+                     ,'bm':self.bm_to_queue}
         matches = [k for k in data if k in queue_map]
         for key in matches:
             queue_map[key](data)    
