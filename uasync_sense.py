@@ -22,7 +22,7 @@ def timeit(method):
 @timeit
 def benchmark1(size):
     def vec(size):
-        return [urandom.getrandbits(8) for i in range(size)]    
+        return [urandom.getrandbits(8)/100 for i in range(size)]    
     mat = [vec(size) for i in range(size)]
     vec = np.Vector(*vec(size))
     return vec.matrix_mult(mat)
