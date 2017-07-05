@@ -25,7 +25,10 @@ def benchmark1(size):
         return [urandom.getrandbits(8)/100 for i in range(size)]    
     mat = [vec(size) for i in range(size)]
     vec = np.Vector(*vec(size))
-    return vec.matrix_mult(mat)
+    res = vec.matrix_mult(mat)
+    del res
+    gc.collect()
+    return
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -52,6 +55,7 @@ class Comm:
         self.ID = int(os.getenv("NODE_ID"))
         print('ID is: ', self.ID)
         self.address_book = {'Server': b'\x00\x13\xa2\x00@\xdasp',
+                            0: b'\x00\x13\xa2\x00@\xdasp',
                             15: b'\x00\x13\xa2\x00AZ\xe8n',17: b'\x00\x13\xa2\x00AZ\xe8s',
                             18: b'\x00\x13\xa2\x00A\x05F\x99',21: b'\x00\x13\xa2\x00A\x05H}',
                             22: b'\x00\x13\xa2\x00A\x05F\xa2',29: b'\x00\x13\xa2\x00A\x05H\x81',
@@ -392,7 +396,7 @@ class ControlTasks:
     def benchmark(self, data):
         t, res = benchmark1(data)
         self.most_recent_benchmark = t
-        result_tx =  {'res':(1,t),'u':self.add_id('benchmark'+str(data))}
+        result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
         yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
 
     def f_to_queue(self, data):
