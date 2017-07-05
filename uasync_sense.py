@@ -23,11 +23,9 @@ def timeit(method):
 def benchmark1(size):
     def vec(size):
         return [urandom.getrandbits(8)/100 for i in range(size)]    
-    mat = [vec(size) for i in range(size)]
-    vec = np.Vector(*vec(size))
-    res = vec.matrix_mult(mat)
-    del res
-    gc.collect()
+    mat = (vec(size) for i in range(size))
+    v = np.Vector(*vec(size))
+    res = v.gen_matrix_mult(mat)
     return
 class Comm:
     """ a class organising communications for uasync_sense:
