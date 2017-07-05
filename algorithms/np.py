@@ -57,6 +57,19 @@ class Vector(object):
         x, y = self.values
         x, y = dc*x - ds*y, ds*x + dc*y
         return Vector(x, y)  
+    def gen_matrix_mult(self, matrix):
+        """ Multiply this vector by a matrix.  Assuming matrix is a list of lists.
+        
+            Example:
+            mat = generator of lists
+            Vector(1,2,3).matrix_mult(mat) ->  (14, 2, 26)
+         
+        """
+        # Grab a row from the matrix, make it a Vector, take the dot product, 
+        # and store it as the first component
+        product = tuple(Vector(*row)*self for row in matrix)
+        
+        return Vector(*product)
     def matrix_mult(self, matrix):
         """ Multiply this vector by a matrix.  Assuming matrix is a list of lists.
         
