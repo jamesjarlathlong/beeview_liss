@@ -23,9 +23,10 @@ def timeit(method):
 def benchmark1(size):
     def vec(size):
         return [urandom.getrandbits(8)/100 for i in range(size)]    
-    mat = [vec(size) for i in range(size)]
+    mat = (vec(size) for i in range(size))
     v = np.Vector(*vec(size))
-    return v.matrix_mult(mat)
+    res = v.gen_matrix_mult(mat)
+    return
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -53,6 +54,7 @@ class Comm:
         self.ID = int(os.getenv("NODE_ID"))
         print('ID is: ', self.ID)
         self.address_book = {'Server': b'\x00\x13\xa2\x00@\xdasp',
+                            0: b'\x00\x13\xa2\x00@\xdasp',
                             15: b'\x00\x13\xa2\x00AZ\xe8n',17: b'\x00\x13\xa2\x00AZ\xe8s',
                             18: b'\x00\x13\xa2\x00A\x05F\x99',21: b'\x00\x13\xa2\x00A\x05H}',
                             22: b'\x00\x13\xa2\x00A\x05F\xa2',29: b'\x00\x13\xa2\x00A\x05H\x81',
@@ -390,6 +392,7 @@ class ControlTasks:
             status = 'timed out'
         return status
     @asyncio.coroutine
+<<<<<<< HEAD
     def benchmark(self):
         while True:
             data = yield from self.comm.bm_q.get()
@@ -397,6 +400,13 @@ class ControlTasks:
             self.most_recent_benchmark = t
             result_tx =  {'res':(1,t),'u':self.add_id('benchmark'+str(data))}
             yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+=======
+    def benchmark(self, data):
+        t, res = benchmark1(data)
+        self.most_recent_benchmark = t
+        result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
+        yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+>>>>>>> 6b2469cfcdb41f0315c9d2089a744382adbf812d
 
     def f_to_queue(self, data):
         self.comm.f_queue.put_nowait(data)

@@ -1,13 +1,5 @@
 import math
-import time
-def timeit(method):
-    def timed(*args, **kw):
-        ts = time.time()
-        result = method(*args, **kw)
-        te = time.time()
-        print(method.__name__,te-ts)
-        return result
-    return timed
+import gc
 class Vector(object):
     def __init__(self, *args):
         """ Create a vector, example: v = Vector(1,2) """
@@ -66,6 +58,24 @@ class Vector(object):
         x, y = self.values
         x, y = dc*x - ds*y, ds*x + dc*y
         return Vector(x, y)  
+    def gen_matrix_mult(self, matrix):
+        """ Multiply this vector by a matrix.  Assuming matrix is a list of lists.
+        
+            Example:
+            mat = generator of lists
+            Vector(1,2,3).matrix_mult(mat) ->  (14, 2, 26)
+         
+        """
+        # Grab a row from the matrix, make it a Vector, take the dot product, 
+        # and store it as the first component
+        product = len(self)*[0.00]
+        for idx,row in enumerate(matrix):
+            product[idx] = Vector(*row)*self
+            try:
+                gc.mem_free()
+            except:
+                pass
+        return Vector(*product)
     def matrix_mult(self, matrix):
         """ Multiply this vector by a matrix.  Assuming matrix is a list of lists.
         
@@ -74,13 +84,12 @@ class Vector(object):
             Vector(1,2,3).matrix_mult(mat) ->  (14, 2, 26)
          
         """
-        if not all(len(row) == len(self) for row in matrix):
-            raise ValueError('Matrix must match vector dimensions') 
-        
+        """if not all(len(row) == len(self) for row in matrix):
+           raise ValueError('Matrix must match vector dimensions') 
+        """
         # Grab a row from the matrix, make it a Vector, take the dot product, 
         # and store it as the first component
         product = tuple(Vector(*row)*self for row in matrix)
-        
         return Vector(*product)
     
     def inner(self, other):
@@ -122,7 +131,7 @@ class Vector(object):
     	return Vector(*powed)
     
     def __iter__(self):
-        return self.values.__iter__()
+        return iter(self.values)#.__iter__()
     
     def __len__(self):
         return len(self.values)
