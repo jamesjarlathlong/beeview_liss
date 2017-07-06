@@ -24,13 +24,14 @@ def benchmark1(size):
     def vec(size):
         return [urandom.getrandbits(8)/100 for i in range(size)]    
     mat = [vec(size) for i in range(size)]
-    vec = np.Vector(*vec(size))
-    return vec.matrix_mult(mat)
+    v = np.Vector(*vec(size))
+    return v.matrix_mult(mat)
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
     def __init__(self):
         self.queue = asyncio.Queue(maxsize = 4096)
+        self.bm_q = asyncio.Queue(maxsize = 16)
         self.accelq = asyncio.Queue(maxsize = 4096)
         self.output_q = asyncio.Queue() #q for pieced together messages
         self.coro_queue = asyncio.PriorityQueue()
@@ -389,18 +390,20 @@ class ControlTasks:
             status = 'timed out'
         return status
     @asyncio.coroutine
-    def benchmark(self, data):
-        t, res = benchmark1(data)
-        self.most_recent_benchmark = t
-        result_tx =  {'res':(1,t),'u':self.add_id('benchmark'+str(data))}
-        yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+    def benchmark(self):
+        while True:
+            data = yield from self.comm.bm_q.get()
+            t, res = benchmark1(data)
+            self.most_recent_benchmark = t
+            result_tx =  {'res':(1,t),'u':self.add_id('benchmark'+str(data))}
+            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
 
     def f_to_queue(self, data):
         self.comm.f_queue.put_nowait(data)
     def s_to_queue(self, data): 
         self.comm.sense_queue.put_nowait(data['s'], data['u'])
     def bm_to_queue(self, data):
-        yield from self.benchmark(data)
+        self.comm.bm_q.put_nowait(data['bm'])
     def kv_to_queue(self, data):
         print('data in kvtoq: ', data)
         kv_pair = data['kv'] 
@@ -669,7 +672,7 @@ def initialise():
     return comm, controller                    
 def main(): 
     comm, controller = initialise()
-    tasks = [controller.radio_listener(), controller.queue_placer(),
+    tasks = [controller.radio_listener(), controller.queue_placer(), controller.benchmark(),
              controller.function_definer(), controller.worker(), controller.sleep_manager()]
     for task in tasks:
         controller.eventloop.call_soon(task)
