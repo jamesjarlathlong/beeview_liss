@@ -392,7 +392,6 @@ class ControlTasks:
             status = 'timed out'
         return status
     @asyncio.coroutine
-<<<<<<< HEAD
     def benchmark(self):
         while True:
             data = yield from self.comm.bm_q.get()
@@ -400,14 +399,6 @@ class ControlTasks:
             self.most_recent_benchmark = t
             result_tx =  {'res':(1,t),'u':self.add_id('benchmark'+str(data))}
             yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
-=======
-    def benchmark(self, data):
-        t, res = benchmark1(data)
-        self.most_recent_benchmark = t
-        result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
-        yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
->>>>>>> 6b2469cfcdb41f0315c9d2089a744382adbf812d
-
     def f_to_queue(self, data):
         self.comm.f_queue.put_nowait(data)
     def s_to_queue(self, data): 
