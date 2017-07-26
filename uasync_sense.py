@@ -397,7 +397,7 @@ class ControlTasks:
             data = yield from self.comm.bm_q.get()
             t, res = benchmark1(data)
             self.most_recent_benchmark = t
-            result_tx =  {'res':(1,t),'u':self.add_id('benchmark'+str(data))}
+            result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
             yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
     def f_to_queue(self, data):
         self.comm.f_queue.put_nowait(data)
