@@ -442,7 +442,6 @@ class ControlTasks:
         print('sending')
         self.comm.ZBee.send('at', command=b'FN')
         print('sent!')
-
     def f_to_queue(self, data):
         self.comm.f_queue.put_nowait(data)
     def s_to_queue(self, data): 
