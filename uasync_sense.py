@@ -33,8 +33,11 @@ class Comm:
     def __init__(self):
         self.queue = asyncio.Queue(maxsize = 4096)
         self.bm_q = asyncio.Queue(maxsize = 16)
+        self.fn_queue = asyncio.Queue()
+        self.at_queue = asyncio.Queue()
         self.accelq = asyncio.Queue(maxsize = 4096)
         self.output_q = asyncio.Queue() #q for pieced together messages
+        self.intermediate_output_q = asyncio.Queue()
         self.coro_queue = asyncio.PriorityQueue()
         self.kv_queue = asyncio.KVQueue(maxsize = 512)
         self.sense_queue = asyncio.KVQueue(maxsize = 32)
@@ -49,6 +52,7 @@ class Comm:
         self.accel = serial.Serial('/dev/ttymxc1', 230400)
          #allocating 512 bytes to the uart buffer -  alot? maybe but we have ~128 kB of RAM
         self.ZBee = ZigBee(self.uart, escaped =False)
+        self.ZBee.send('at', command=b'NO',parameter=b'\x04')
         self.writer = asyncio.ZigbeeStreamWriter(self.ZBee)
         self.zbee_id = 0
         self.ID = int(os.getenv("NODE_ID"))
@@ -69,6 +73,9 @@ class Comm:
                             63: b'\x00\x13\xa2\x00A\x05H\x91',64: b'\x00\x13\xa2\x00@\xdasm',
                             68: b'\x00\x13\xa2\x00@\xdasl',69: b'\x00\x13\xa2\x00A\x05H\x8b',
                             95: b'\x00\x13\xa2\x00@\xdas\x95',96: b'\x00\x13\xa2\x00@\xdasd'}
+    def inverse_address(self,value):
+        book = self.address_book
+        return list(book.keys())[list(book.values()).index(value)]
     def id_counter(self):
         if self.zbee_id<255:
             self.zbee_id+=1
@@ -163,6 +170,7 @@ class ControlTasks:
         #self.rtc = pyb.RTC()
         self.sleep_handlers = {ControlTasks.IDLE_SLEEP: self.idle_sleep, ControlTasks.DEEP_SLEEP: self.deep_sleep} 
         self.completed_msgs = {}
+        self.neighbors = []
     def package(self, job_class, time_received, user):
         #======================#sense stage#======================#    
         exec_time, curried_runfunc = self.package_senser(job_class.sampler,
@@ -325,6 +333,7 @@ class ControlTasks:
     def radio_listener(self):
         while True:
             yield from self.comm.ZBee.wait_read_multipleframes(self.comm.queue,
+                                                               self.comm.intermediate_output_q,
                                                                self.comm.output_q)
     @asyncio.coroutine
     def send_and_wait(self, byte_chunk, addr, frame_id=None):
@@ -392,21 +401,47 @@ class ControlTasks:
             status = 'timed out'
         return status
     @asyncio.coroutine
-<<<<<<< HEAD
-    def benchmark(self):
-        while True:
-            data = yield from self.comm.bm_q.get()
-            t, res = benchmark1(data)
-            self.most_recent_benchmark = t
-            result_tx =  {'res':(1,t),'u':self.add_id('benchmark'+str(data))}
-            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
-=======
     def benchmark(self, data):
         t, res = benchmark1(data)
         self.most_recent_benchmark = t
         result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
         yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
->>>>>>> 6b2469cfcdb41f0315c9d2089a744382adbf812d
+
+    @asyncio.coroutine
+    def report_neighbours(self):
+        while True:
+            req = yield from self.comm.fn_queue.get()
+            print('got req')
+            neighbors = self.neighbors
+            result_tx = {'res':(1,json.dumps({'rs':neighbors})),'u':self.add_id('rs')}
+            print('result_tx',result_tx)
+            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+    @asyncio.coroutine
+    def at_reader(self):
+        while True:
+            data = yield from self.comm.at_queue.get()
+            print('data: ', data)
+            if data['command'] == b'FN':
+                payload = data['parameter']
+                print('payload: ',payload)
+                #find neighbor address
+                neighbor_node_addr = payload[2:10]
+                neighbor_number = self.comm.inverse_address(neighbor_node_addr)
+                #find rssi
+                rssi = payload[-1]
+                upsert_data = {'source':self.ID,'target':neighbor_number,'value':rssi}
+                self.neighbors.append(upsert_data)
+                print('upsert_data:',upsert_data, self.neighbors)
+    @asyncio.coroutine
+    def find_neighbours(self):
+        while True:
+            self.get_fn()
+            yield from asyncio.sleep(30)
+    def get_fn(self):
+        self.neighbors = []
+        print('sending')
+        self.comm.ZBee.send('at', command=b'FN')
+        print('sent!')
 
     def f_to_queue(self, data):
         self.comm.f_queue.put_nowait(data)
@@ -414,6 +449,8 @@ class ControlTasks:
         self.comm.sense_queue.put_nowait(data['s'], data['u'])
     def bm_to_queue(self, data):
         self.comm.bm_q.put_nowait(data['bm'])
+    def fn_to_queue(self, data):
+        self.comm.fn_queue.put_nowait(data['fn'])
     def kv_to_queue(self, data):
         print('data in kvtoq: ', data)
         kv_pair = data['kv'] 
@@ -422,7 +459,8 @@ class ControlTasks:
         queue_map = {'f':self.f_to_queue,
                      'kv':self.kv_to_queue,
                      's':self.s_to_queue
-                     ,'bm':self.bm_to_queue}
+                     ,'bm':self.bm_to_queue
+                     ,'fn':self.fn_to_queue}
         matches = [k for k in data if k in queue_map]
         for key in matches:
             queue_map[key](data)    
@@ -439,7 +477,11 @@ class ControlTasks:
                 self.message_to_queue(data)
             except (KeyError, ValueError) as e:##no rf_data
                 if msg['id'] == 'tx_status':
-                    self.acknowledge(msg)      
+                    self.acknowledge(msg)  
+                if msg['id'] in ['at_response', 'remote_at_response']:
+                    print('putting on at')
+                    self.comm.at_queue.put_nowait(msg)  
+                #add handling of AT command responses here e.g. finding neighbors    
     @asyncio.coroutine    
     def function_definer(self):
         """consumes function definitions from the f_queue,
@@ -683,7 +725,8 @@ def initialise():
 def main(): 
     comm, controller = initialise()
     tasks = [controller.radio_listener(), controller.queue_placer(), controller.benchmark(),
-             controller.function_definer(), controller.worker(), controller.sleep_manager()]
+             controller.function_definer(), controller.worker(), controller.sleep_manager()
+             ,controller.find_neighbours(),controller.report_neighbours()]
     for task in tasks:
         controller.eventloop.call_soon(task)
     #controller.eventloop.call_later(1800, loop_stopper())
