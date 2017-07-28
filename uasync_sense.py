@@ -416,10 +416,10 @@ class ControlTasks:
                 val = 99 if num=='Server' else num
                 return str(val)
             def cmp(ne):
-                return srv(ne['source'])+'_'+srv(ne['target'])+'_'+srv(ne['value'])
+                return srv(ne['target'])+'_'+srv(ne['value'])
             neighbors = self.neighbors
             cmped = [cmp(n) for n in neighbors]
-            whole_thing = cmped.join('.')
+            whole_thing = ('.').join(cmped)
             result_tx = {'res':(1,json.dumps({'rs':whole_thing})),'u':self.add_id('rs')}
             yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
     @asyncio.coroutine
@@ -440,10 +440,11 @@ class ControlTasks:
                 print('upsert_data:',upsert_data, self.neighbors)
     def upsert(self, entry):
         def uq(e):
-            return str(entry['source'])+str(entry['target'])
+            return str(e['source'])+str(e['target'])
         uqed = [uq(i) for i in self.neighbors]
         try:
             idx = uqed.index(uq(entry))
+            print('already had it: ',idx, entry, self.neighbors, )
             self.neighbors[idx] = entry
         except ValueError:
             self.neighbors.append(entry)
