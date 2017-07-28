@@ -37,7 +37,6 @@ class Comm:
         self.at_queue = asyncio.Queue()
         self.accelq = asyncio.Queue(maxsize = 4096)
         self.output_q = asyncio.Queue() #q for pieced together messages
-        self.intermediate_output_q = asyncio.Queue()
         self.coro_queue = asyncio.PriorityQueue()
         self.kv_queue = asyncio.KVQueue(maxsize = 512)
         self.sense_queue = asyncio.KVQueue(maxsize = 32)
@@ -333,7 +332,6 @@ class ControlTasks:
     def radio_listener(self):
         while True:
             yield from self.comm.ZBee.wait_read_multipleframes(self.comm.queue,
-                                                               self.comm.intermediate_output_q,
                                                                self.comm.output_q)
     @asyncio.coroutine
     def send_and_wait(self, byte_chunk, addr, frame_id=None):
