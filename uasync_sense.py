@@ -336,7 +336,7 @@ class ControlTasks:
             yield from self.comm.ZBee.wait_read_multipleframes(self.comm.queue,
                                                                self.comm.output_q)
     @asyncio.coroutine
-    def send_and_wait(self, byte_chunk, addr, frame_id=None):
+    def send_and_wait(self, byte_chunk, addr, frame_id=None,level=0):
         """given a chunk of a message to send to addr
         send the chunk, and then wait for confirmation that
         the message has sent before returning"""
@@ -351,9 +351,9 @@ class ControlTasks:
             return
         else:
             #wait a second first
-            yield from asyncio.sleep(1)
+            yield from asyncio.sleep(0.2+0.2*level)
             print('trying again: ', frame_id)
-            yield from self.send_and_wait(byte_chunk, addr, frame_id = frame_id)
+            yield from self.send_and_wait(byte_chunk, addr, frame_id = frame_id,level=level+1)
     @asyncio.coroutine
     def node_to_node(self, message, address):
         self_address = self.comm.address_book[self.comm.ID]
@@ -454,7 +454,7 @@ class ControlTasks:
     def find_neighbours(self):
         while True:
             self.get_fn()
-            yield from asyncio.sleep(30)
+            yield from asyncio.sleep(120)
     def get_fn(self):
         self.neighbors = []
         print('sending')
