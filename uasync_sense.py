@@ -29,6 +29,24 @@ def benchmark1(size):
     v = np.Vector(*vec(size))
     res = v.gen_matrix_mult(mat)
     return
+def timecoroutine(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = yield from method(*args, **kw)
+        te = time.time()
+        ex_time = te-ts
+        return ex_time,result
+    return timed
+def append_record(record):
+    with open('tx_stats', 'a') as f:
+        json.dump(record, f)
+        f.write(os.linesep)
+def write_stats_to_file(method):
+    def writestats(*args):
+        stats = yield from method(*args)
+        append_record(stats)
+        return stats
+    return writestats
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -335,7 +353,7 @@ class ControlTasks:
         while True:
             yield from self.comm.ZBee.wait_read_multipleframes(self.comm.queue,
                                                                self.comm.output_q)
-    @asyncio.coroutine
+    @timecoroutine
     def send_and_wait(self, byte_chunk, addr, frame_id=None,level=0):
         """given a chunk of a message to send to addr
         send the chunk, and then wait for confirmation that
@@ -343,27 +361,32 @@ class ControlTasks:
         if not frame_id:
             frame_id = self.comm.id_counter()
         yield from self.comm.writer.network_awrite(byte_chunk, addr, frame_id)
-        status = yield from self.check_acknowledged(frame_id)
-        print('status is: ',status)
+        status,retries = yield from self.check_acknowledged(frame_id)
         success = b'\x00'
         if status == success:
-            print('success sending: ', frame_id, byte_chunk)
-            return
+            print('success sending: ', frame_id, byte_chunk,level)
+            return retries, level
         else:
             #wait a second first
             yield from asyncio.sleep(0.2+0.2*level)
             print('trying again: ', frame_id)
-            yield from self.send_and_wait(byte_chunk, addr, frame_id = frame_id,level=level+1)
+            retries, level = yield from self.send_and_wait(byte_chunk, addr, frame_id = frame_id,level=level+1)
+            return retries,level
     @asyncio.coroutine
+    @write_stats_to_file
     def node_to_node(self, message, address):
         self_address = self.comm.address_book[self.comm.ID]
         if address == self_address:
             if 'kv' in message:
                 print('node to node: ', message)
                 message['u'] = message['u'][2::]#don't need nodeid concat
+            if 'res' in message:
+                message['res'] = json.loads(message['res'][1])
             self.message_to_queue(message)
         else:
-            yield from self.network_awrite_chunked(message, address)        
+            stats = yield from self.network_awrite_chunked(message, address) 
+            stats['msg'] = message 
+            return stats
     @asyncio.coroutine
     def network_awrite_chunked(self, buf, addr):
         """
@@ -371,11 +394,28 @@ class ControlTasks:
         of the message, adds message number and chk for each, converts
         it to bytes and calls network_awrite for each
         """
+        def unpacker(a):
+            if isinstance(a[1],int):
+                return a
+            else:
+                return unpacker(a[1])
+        def unpack(packed):
+            return packed[0], unpacker(packed)
         chunks = networking.chunk_data_to_payload(buf)
         ##print('chunks is: ',chunks)
         byteified_msgs = map(networking.json_to_bytes, chunks)
+        nodenum = self.comm.inverse_address(addr)
+        try:
+            rssi = [i for i in self.neighbors if i['target'] ==nodenum][0]['value']
+        except:
+            rssi = None
+        stats = []
         for byte_chunk in byteified_msgs:
-            yield from self.send_and_wait(byte_chunk, addr)
+            packaged = yield from self.send_and_wait(byte_chunk, addr)
+            print('pack: ',packaged)
+            t, (retries,level) = unpack(packaged)
+            stats.append({'t':t,'retries':retries,'level':level})
+        return {'msgize':len(json.dumps(buf,separators=(',',':'))) ,'stats':stats,'rssi':rssi,'node':nodenum}        
          
     def acknowledge(self, msg):
         """on receipt of an ack from the network, add the msg id
@@ -383,23 +423,25 @@ class ControlTasks:
         ##print('acking')
         msg_id = msg['frame_id']
         status = msg['deliver_status']
-        self.completed_msgs[msg_id] = status    
+        retries = msg['retries'][0]
+        self.completed_msgs[msg_id] = (status,retries)    
         
     @asyncio.coroutine
     def check_acknowledged(self, msg_id):
         """check if the message associated with msg_id was 
         acknowledged. If no ack within 3 seconds, return failed"""
         counter = 0
-        while (msg_id not in self.completed_msgs) and (counter<3):
+        while (msg_id not in self.completed_msgs) and (counter<20):
             #print(msg_id,'not ack yet: ',  self.completed_msgs)
-            yield from asyncio.sleep(0.2)
+            yield from asyncio.sleep(0.05)
             counter+=1
         try:
-            status = self.completed_msgs[msg_id]
+            status,retries = self.completed_msgs[msg_id]
             del self.completed_msgs[msg_id]
         except KeyError:
             status = 'timed out'
-        return status
+            retries = None
+        return status, retries
     @asyncio.coroutine
     def benchmark(self):
         while True:
@@ -454,7 +496,7 @@ class ControlTasks:
     def find_neighbours(self):
         while True:
             self.get_fn()
-            yield from asyncio.sleep(120)
+            yield from asyncio.sleep(600)
     def get_fn(self):
         self.neighbors = []
         print('sending')

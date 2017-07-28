@@ -25,6 +25,6 @@ def chunk_data_to_payload(dict_msg):
     chunk_type = set(dict_msg).intersection(possible_chunks).pop()
     string_msg = json.dumps(dict_msg[chunk_type], separators=(',',':'))
     #convert {res:something} to '{res:something}', or {kv_values:(a,b)} to '{kv_values:(a,b)}'
-    string_list = split_string_into_list(string_msg, 23)
+    string_list = split_string_into_list(string_msg, 20)
     full_msgs = add_chksum_info_tochunks(string_list, user, chunk_type)
     return full_msgs
