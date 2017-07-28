@@ -414,11 +414,14 @@ class ControlTasks:
             print('got req')
             def srv(num):
                 val = 99 if num=='Server' else num
+                return str(val)
+            def cmp(ne):
+                return srv(ne['source'])+'_'+srv(ne['target'])+'_'+srv(ne['value'])
             neighbors = self.neighbors
-            for ne in neighbors:
-                compressed = srv(ne['source'])+'_'+srv(ne['target'])+'_'+ne['value']
-                result_tx = {'res':(1,json.dumps({'rs':compressed})),'u':self.add_id('rs')}
-                yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+            cmped = [cmp(n) for n in neighbors]
+            whole_thing = cmped.join('.')
+            result_tx = {'res':(1,json.dumps({'rs':whole_thing})),'u':self.add_id('rs')}
+            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
     @asyncio.coroutine
     def at_reader(self):
         while True:
@@ -433,8 +436,17 @@ class ControlTasks:
                 #find rssi
                 rssi = payload[-1]
                 upsert_data = {'source':self.ID,'target':neighbor_number,'value':rssi}
-                self.neighbors.append(upsert_data)
+                self.upsert(upsert_data)
                 print('upsert_data:',upsert_data, self.neighbors)
+    def upsert(self, entry):
+        def uq(e):
+            return str(entry['source'])+str(entry['target'])
+        uqed = [uq(i) for i in self.neighbors]
+        try:
+            idx = uqed.index(uq(entry))
+            self.neighbors[idx] = entry
+        except ValueError:
+            self.neighbors.append(entry)
     @asyncio.coroutine
     def find_neighbours(self):
         while True:
