@@ -19,6 +19,8 @@ def timeit(method):
         ex_time = te-ts
         return ex_time,result
     return timed
+def random_word():
+    return str(urandom.getrandbits(12))
 @timeit
 def benchmark1(size):
     def vec(size):
@@ -404,7 +406,7 @@ class ControlTasks:
             data = yield from self.comm.bm_q.get()
             t, res = benchmark1(data)
             self.most_recent_benchmark = t
-            result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
+            result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id(random_word()+'bnch'+str(data))}
             yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
 
     @asyncio.coroutine
@@ -420,7 +422,7 @@ class ControlTasks:
             neighbors = self.neighbors
             cmped = [cmp(n) for n in neighbors]
             whole_thing = ('.').join(cmped)
-            result_tx = {'res':(1,json.dumps({'rs':whole_thing})),'u':self.add_id('rs')}
+            result_tx = {'res':(1,json.dumps({'rs':whole_thing})),'u':self.add_id(random_word()+'rs')}
             yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
     @asyncio.coroutine
     def at_reader(self):
