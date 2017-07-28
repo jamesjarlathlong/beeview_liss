@@ -401,11 +401,13 @@ class ControlTasks:
             status = 'timed out'
         return status
     @asyncio.coroutine
-    def benchmark(self, data):
-        t, res = benchmark1(data)
-        self.most_recent_benchmark = t
-        result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
-        yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+    def benchmark(self):
+        while True:
+            data = yield from self.comm.bm_q.get()
+            t, res = benchmark1(data)
+            self.most_recent_benchmark = t
+            result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
+            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
 
     @asyncio.coroutine
     def report_neighbours(self):
