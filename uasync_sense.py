@@ -412,10 +412,13 @@ class ControlTasks:
         while True:
             req = yield from self.comm.fn_queue.get()
             print('got req')
+            def srv(num):
+                val = 99 if num=='Server' else num
             neighbors = self.neighbors
-            result_tx = {'res':(1,json.dumps({'rs':neighbors})),'u':self.add_id('rs')}
-            print('result_tx',result_tx)
-            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+            for ne in neighbors:
+                compressed = srv(ne['source'])+'_'+srv(ne['target'])+'_'+ne['value']
+                result_tx = {'res':(1,json.dumps({'rs':compressed})),'u':self.add_id('rs')}
+                yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
     @asyncio.coroutine
     def at_reader(self):
         while True:
