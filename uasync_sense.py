@@ -58,7 +58,7 @@ class Comm:
         self.ID = int(os.getenv("NODE_ID"))
         print('ID is: ', self.ID)
         self.address_book = {'Server': b'\x00\x13\xa2\x00@\xdasp',
-                            0: b'\x00\x13\xa2\x00@\xdasp',
+                            99: b'\x00\x13\xa2\x00@\xdasp',
                             15: b'\x00\x13\xa2\x00AZ\xe8n',17: b'\x00\x13\xa2\x00AZ\xe8s',
                             18: b'\x00\x13\xa2\x00A\x05F\x99',21: b'\x00\x13\xa2\x00A\x05H}',
                             22: b'\x00\x13\xa2\x00A\x05F\xa2',29: b'\x00\x13\xa2\x00A\x05H\x81',
@@ -725,7 +725,7 @@ def main():
     comm, controller = initialise()
     tasks = [controller.radio_listener(), controller.queue_placer(), controller.benchmark(),
              controller.function_definer(), controller.worker(), controller.sleep_manager()
-             ,controller.find_neighbours(),controller.report_neighbours()]
+             ,controller.find_neighbours(),controller.report_neighbours(), controller.at_reader()]
     for task in tasks:
         controller.eventloop.call_soon(task)
     #controller.eventloop.call_later(1800, loop_stopper())
