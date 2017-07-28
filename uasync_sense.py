@@ -1,5 +1,5 @@
 import uasyncio as asyncio
-import ujson as json
+import json as json
 import utime as time
 import select
 from zbee.zigbee import ZigBee
