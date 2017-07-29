@@ -47,6 +47,16 @@ def write_stats_to_file(method):
         append_record(stats)
         return stats
     return writestats
+def timed_gen(gen, user, key=None, node=None):
+    ts = []
+    while True:
+        try:
+            t, res = timeit(next)(gen)
+            ts.append(t)
+            yield res
+        except StopIteration:
+            break
+    print(ts, key, node)
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -587,6 +597,70 @@ class ControlTasks:
                     yield from self.sense_worker(curried_func)
                     print('finished sampler')
                 if self.comm.ID in curried_func['map_nodes']:
+                    maps = curried_func['map_nodes']
+                    positions = [i for i,e in enumerate(maps) if e==self.comm.ID]
+                    for idx in positions:
+                        print('starting mapper',idx)
+                        data = yield from self.comm.sense_queue.get(str(idx)+'_'+curried_func['u'])
+                        print('got data')
+                        yield from self.map_worker(curried_func, data, idx)
+                        print('finished mapper')
+                if self.comm.ID in curried_func['reduce_nodes']:
+                    print('reducing')
+                    yield from self.reduce_worker(curried_func)
+                    print('reduced')
+                self.in_map = False                                                   
+            else:   
+                yield from self.comm.coro_queue.put(coro)
+                yield from asyncio.sleep(0)
+    @asyncio.coroutine
+    def sense_worker(self, curried_func):
+        map_idx = curried_func['sense_nodes'].index(self.comm.ID)
+        data = yield from curried_func['func'](curried_func['arg'])
+        message = {'s':data, 'u':str(map_idx)+'_'+curried_func['u']}
+        child_node = curried_func['map_nodes'][map_idx]
+        yield from self.node_to_node(message, self.comm.address_book[child_node])
+    def partitioner(self, key, reducer_ids):
+        idx = hash(key)%len(reducer_ids)
+        return reducer_ids[idx]
+    @asyncio.coroutine
+    def map_worker(self, curried_func, map_data, map_idx):
+        reduce_nodes= curried_func['reduce_nodes']
+        job_nodeid = self.add_id(curried_func['u']) 
+        gen = curried_func['map_func'](curried_func['map_arg'], map_data) #generator function
+        for j in timed_gen(gen, curried_func['u'], node=map_idx):
+            print('j is: ',j)
+            if isinstance(j, asyncio.Future):
+                yield j
+            else:
+                if j is not None:
+                    key,value = j
+                    dest_id = self.partitioner(key, reduce_nodes)
+                    reduce_dest = self.comm.address_book[dest_id]
+                    result = {'kv':j, 'u':job_nodeid}
+                    yield from self.node_to_node(result, reduce_dest)
+            # notify end of map function to reduce node
+            #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
+        reduce_node_addresses = [self.comm.address_book[i] for i in reduce_nodes]
+        for dest in reduce_node_addresses:
+            end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
+            yield from self.node_to_node(end_message, dest)
+        self.comm.sense_queue.remove(str(map_idx)+'_'+curried_func['u'])       
+        return
+    @asyncio.coroutine
+    def worker(self):
+        """
+        """
+        while True:
+            coro = yield from self.comm.coro_queue.get()     
+            if coro[0] < self.eventloop.time():
+                self.in_map = True
+                curried_func = coro[1]
+                if self.comm.ID in curried_func['sense_nodes']:
+                    print('starting sampler')
+                    yield from self.sense_worker(curried_func)
+                    print('finished sampler')
+                if self.comm.ID in curried_func['map_nodes']:
                     print('starting mapper')
                     data = yield from self.comm.sense_queue.get(curried_func['u'])
                     print('got data')
@@ -600,40 +674,6 @@ class ControlTasks:
             else:   
                 yield from self.comm.coro_queue.put(coro)
                 yield from asyncio.sleep(0)
-    @asyncio.coroutine
-    def sense_worker(self, curried_func):
-        data = yield from curried_func['func'](curried_func['arg'])
-        message = {'s':data, 'u':curried_func['u']}
-        mapper_idx = curried_func['sense_nodes'].index(self.comm.ID)
-        child_node = curried_func['map_nodes'][mapper_idx]
-        yield from self.node_to_node(message, self.comm.address_book[child_node])
-    def partitioner(self, key, reducer_ids):
-        idx = hash(key)%len(reducer_ids)
-        return reducer_ids[idx]
-    @asyncio.coroutine
-    def map_worker(self, curried_func, map_data):
-        reduce_nodes= curried_func['reduce_nodes']
-        job_nodeid = self.add_id(curried_func['u']) 
-        gen = curried_func['map_func'](curried_func['map_arg'], map_data) #generator function
-        for j in gen:
-            if isinstance(j, asyncio.Sleep):
-                yield j
-            else:
-                if j is not None:
-
-                    key,value = j
-                    dest_id = self.partitioner(key, reduce_nodes)
-                    reduce_dest = self.comm.address_book[dest_id]
-                    result = {'kv':j, 'u':job_nodeid}
-                    yield from self.node_to_node(result, reduce_dest)
-            # notify end of map function to reduce node
-            #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
-        reduce_node_addresses = [self.comm.address_book[i] for i in reduce_nodes]
-        for dest in reduce_node_addresses:
-            end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
-            yield from self.node_to_node(end_message, dest)
-        self.comm.sense_queue.remove(curried_func['u'])       
-        return
     #@asyncio.coroutine
     def get_groupedby(self,q):
         first_pair = q.get_nowait()
