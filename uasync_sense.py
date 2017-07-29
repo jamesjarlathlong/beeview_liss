@@ -37,14 +37,14 @@ def timecoroutine(method):
         ex_time = te-ts
         return ex_time,result
     return timed
-def append_record(record):
-    with open('tx_stats', 'a') as f:
+def append_record(filename,record):
+    with open(filename, 'a') as f:
         json.dump(record, f)
-        f.write(os.linesep)
+        f.write('\n')
 def write_stats_to_file(method):
     def writestats(*args):
         stats = yield from method(*args)
-        append_record(stats)
+        append_record('tx_stats',stats)
         return stats
     return writestats
 def timed_gen(gen, user, key=None, node=None):
@@ -56,7 +56,11 @@ def timed_gen(gen, user, key=None, node=None):
             yield res
         except StopIteration:
             break
-    print(ts, key, node)
+    print('timed gen**********',user,key,node)
+    if key:
+        append_record('px_stats',{'type':'reducer','ts':ts,'onkey':key,'job':user})
+    else:
+        append_record('px_stats',{'type':'mapper','ts':ts,'mapnum':node,'job':user})
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -370,6 +374,7 @@ class ControlTasks:
         the message has sent before returning"""
         if not frame_id:
             frame_id = self.comm.id_counter()
+        print('sending frame id: ', frame_id, self.completed_msgs)
         yield from self.comm.writer.network_awrite(byte_chunk, addr, frame_id)
         status,retries = yield from self.check_acknowledged(frame_id)
         success = b'\x00'
@@ -434,7 +439,8 @@ class ControlTasks:
         msg_id = msg['frame_id']
         status = msg['deliver_status']
         retries = msg['retries'][0]
-        self.completed_msgs[msg_id] = (status,retries)    
+        if msg['id'] == 'tx_status':
+            self.completed_msgs[msg_id] = (status,retries)    
         
     @asyncio.coroutine
     def check_acknowledged(self, msg_id):
@@ -442,7 +448,6 @@ class ControlTasks:
         acknowledged. If no ack within 3 seconds, return failed"""
         counter = 0
         while (msg_id not in self.completed_msgs) and (counter<20):
-            #print(msg_id,'not ack yet: ',  self.completed_msgs)
             yield from asyncio.sleep(0.05)
             counter+=1
         try:
@@ -480,10 +485,8 @@ class ControlTasks:
     def at_reader(self):
         while True:
             data = yield from self.comm.at_queue.get()
-            print('data: ', data)
             if data['command'] == b'FN':
                 payload = data['parameter']
-                print('payload: ',payload)
                 #find neighbor address
                 neighbor_node_addr = payload[2:10]
                 neighbor_number = self.comm.inverse_address(neighbor_node_addr)
@@ -491,14 +494,13 @@ class ControlTasks:
                 rssi = payload[-1]
                 upsert_data = {'source':self.ID,'target':neighbor_number,'value':rssi}
                 self.upsert(upsert_data)
-                print('upsert_data:',upsert_data, self.neighbors)
+                print('upserting')
     def upsert(self, entry):
         def uq(e):
             return str(e['source'])+str(e['target'])
         uqed = [uq(i) for i in self.neighbors]
         try:
             idx = uqed.index(uq(entry))
-            print('already had it: ',idx, entry, self.neighbors, )
             self.neighbors[idx] = entry
         except ValueError:
             self.neighbors.append(entry)
@@ -521,7 +523,6 @@ class ControlTasks:
     def fn_to_queue(self, data):
         self.comm.fn_queue.put_nowait(data['fn'])
     def kv_to_queue(self, data):
-        print('data in kvtoq: ', data)
         kv_pair = data['kv'] 
         self.comm.kv_queue.put_nowait((Q_Item(kv_pair[0]), kv_pair[1]), data['u'])
     def message_to_queue(self, data):
@@ -548,7 +549,6 @@ class ControlTasks:
                 if msg['id'] == 'tx_status':
                     self.acknowledge(msg)  
                 if msg['id'] in ['at_response', 'remote_at_response']:
-                    print('putting on at')
                     self.comm.at_queue.put_nowait(msg)  
                 #add handling of AT command responses here e.g. finding neighbors    
     @asyncio.coroutine    
@@ -599,6 +599,7 @@ class ControlTasks:
                 if self.comm.ID in curried_func['map_nodes']:
                     maps = curried_func['map_nodes']
                     positions = [i for i,e in enumerate(maps) if e==self.comm.ID]
+                    print('positions: ',positions)
                     for idx in positions:
                         print('starting mapper',idx)
                         data = yield from self.comm.sense_queue.get(str(idx)+'_'+curried_func['u'])
@@ -630,7 +631,7 @@ class ControlTasks:
         gen = curried_func['map_func'](curried_func['map_arg'], map_data) #generator function
         for j in timed_gen(gen, curried_func['u'], node=map_idx):
             print('j is: ',j)
-            if isinstance(j, asyncio.Future):
+            if isinstance(j, asyncio.Sleep):
                 yield j
             else:
                 if j is not None:
@@ -647,33 +648,6 @@ class ControlTasks:
             yield from self.node_to_node(end_message, dest)
         self.comm.sense_queue.remove(str(map_idx)+'_'+curried_func['u'])       
         return
-    @asyncio.coroutine
-    def worker(self):
-        """
-        """
-        while True:
-            coro = yield from self.comm.coro_queue.get()     
-            if coro[0] < self.eventloop.time():
-                self.in_map = True
-                curried_func = coro[1]
-                if self.comm.ID in curried_func['sense_nodes']:
-                    print('starting sampler')
-                    yield from self.sense_worker(curried_func)
-                    print('finished sampler')
-                if self.comm.ID in curried_func['map_nodes']:
-                    print('starting mapper')
-                    data = yield from self.comm.sense_queue.get(curried_func['u'])
-                    print('got data')
-                    yield from self.map_worker(curried_func, data)
-                    print('finished mapper')
-                if self.comm.ID in curried_func['reduce_nodes']:
-                    print('reducing')
-                    yield from self.reduce_worker(curried_func)
-                    print('reduced')
-                self.in_map = False                                                   
-            else:   
-                yield from self.comm.coro_queue.put(coro)
-                yield from asyncio.sleep(0)
     #@asyncio.coroutine
     def get_groupedby(self,q):
         first_pair = q.get_nowait()
@@ -717,7 +691,7 @@ class ControlTasks:
             values = grouped_pairs
             reduce_gen = reduce_controller(reduce_logic, key, values)
             #now advance the generator
-            for j in reduce_gen:
+            for j in timed_gen(reduce_gen, user, key=key):
                     if isinstance(j, asyncio.Sleep):
                         yield j
                     else:
@@ -745,7 +719,7 @@ class ControlTasks:
         if until_next_epoch > 0:
         #pyb.delay( min(until_next_epoch,self.sleep_for) ) 
             #yield from asyncio.sleep(self.wait_atleast[self.sleep_mode])
-            print('going to sleep for: ', min(until_next_epoch,self.sleep_for))
+            #print('going to sleep for: ', min(until_next_epoch,self.sleep_for))
             time_asleep = self.sleep(min(until_next_epoch,self.sleep_for))
             self.eventloop.increment_time(time_asleep) 
         yield from asyncio.sleep(0)
@@ -753,11 +727,10 @@ class ControlTasks:
     @asyncio.coroutine
     def regular_sleep(self):  
         #pyb.delay(self.sleep_for) #this is how long we sleep for
-        print('going to rsleep for: ', self.sleep_for)
+        #print('going to rsleep for: ', self.sleep_for)
         time_asleep = self.sleep(self.sleep_for)
         #self.eventloop.increment_time(time_asleep)
         yield from asyncio.sleep(self.wait_atleast[self.sleep_mode])
-        print('checking for any incoming messages')
          #exit so we can check messages
     @asyncio.coroutine
     def sleep_manager(self):
@@ -785,8 +758,8 @@ def loop_stopper():
             
 def initialise():
     comm = Comm()
-    trx = comm.ZBee.send('tx', data= bytes( json.dumps({'update':'awake'}), 'ascii' ),
-                          dest_addr_long=comm.address_book['Server'], dest_addr=b'\xff\xfe')
+    #trx = comm.ZBee.send('tx', data= bytes( json.dumps({'update':'awake'}), 'ascii' ),
+    #                      dest_addr_long=comm.address_book['Server'], dest_addr=b'\xff\xfe')
     loop = asyncio.get_event_loop()
     controller = ControlTasks(loop, comm)
     loop.add_reader(comm.uart.fd, handle_stdin, comm, loop)
