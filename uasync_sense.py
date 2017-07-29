@@ -1,5 +1,5 @@
 import uasyncio as asyncio
-import ujson as json
+import json as json
 import utime as time
 import select
 from zbee.zigbee import ZigBee
@@ -19,6 +19,8 @@ def timeit(method):
         ex_time = te-ts
         return ex_time,result
     return timed
+def random_word():
+    return str(urandom.getrandbits(12))
 @timeit
 def benchmark1(size):
     def vec(size):
@@ -27,6 +29,34 @@ def benchmark1(size):
     v = np.Vector(*vec(size))
     res = v.gen_matrix_mult(mat)
     return
+def timecoroutine(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = yield from method(*args, **kw)
+        te = time.time()
+        ex_time = te-ts
+        return ex_time,result
+    return timed
+def append_record(record):
+    with open('tx_stats', 'a') as f:
+        json.dump(record, f)
+        f.write(os.linesep)
+def write_stats_to_file(method):
+    def writestats(*args):
+        stats = yield from method(*args)
+        append_record(stats)
+        return stats
+    return writestats
+def timed_gen(gen, user, key=None, node=None):
+    ts = []
+    while True:
+        try:
+            t, res = timeit(next)(gen)
+            ts.append(t)
+            yield res
+        except StopIteration:
+            break
+    print(ts, key, node)
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -37,7 +67,6 @@ class Comm:
         self.at_queue = asyncio.Queue()
         self.accelq = asyncio.Queue(maxsize = 4096)
         self.output_q = asyncio.Queue() #q for pieced together messages
-        self.intermediate_output_q = asyncio.Queue()
         self.coro_queue = asyncio.PriorityQueue()
         self.kv_queue = asyncio.KVQueue(maxsize = 512)
         self.sense_queue = asyncio.KVQueue(maxsize = 32)
@@ -333,37 +362,41 @@ class ControlTasks:
     def radio_listener(self):
         while True:
             yield from self.comm.ZBee.wait_read_multipleframes(self.comm.queue,
-                                                               self.comm.intermediate_output_q,
                                                                self.comm.output_q)
-    @asyncio.coroutine
-    def send_and_wait(self, byte_chunk, addr, frame_id=None):
+    @timecoroutine
+    def send_and_wait(self, byte_chunk, addr, frame_id=None,level=0):
         """given a chunk of a message to send to addr
         send the chunk, and then wait for confirmation that
         the message has sent before returning"""
         if not frame_id:
             frame_id = self.comm.id_counter()
         yield from self.comm.writer.network_awrite(byte_chunk, addr, frame_id)
-        status = yield from self.check_acknowledged(frame_id)
-        print('status is: ',status)
+        status,retries = yield from self.check_acknowledged(frame_id)
         success = b'\x00'
         if status == success:
-            print('success sending: ', frame_id, byte_chunk)
-            return
+            print('success sending: ', frame_id, byte_chunk,level)
+            return retries, level
         else:
             #wait a second first
-            yield from asyncio.sleep(1)
+            yield from asyncio.sleep(0.2+0.2*level)
             print('trying again: ', frame_id)
-            yield from self.send_and_wait(byte_chunk, addr, frame_id = frame_id)
+            retries, level = yield from self.send_and_wait(byte_chunk, addr, frame_id = frame_id,level=level+1)
+            return retries,level
     @asyncio.coroutine
+    @write_stats_to_file
     def node_to_node(self, message, address):
         self_address = self.comm.address_book[self.comm.ID]
         if address == self_address:
             if 'kv' in message:
                 print('node to node: ', message)
                 message['u'] = message['u'][2::]#don't need nodeid concat
+            if 'res' in message:
+                message['res'] = json.loads(message['res'][1])
             self.message_to_queue(message)
         else:
-            yield from self.network_awrite_chunked(message, address)        
+            stats = yield from self.network_awrite_chunked(message, address) 
+            stats['msg'] = message 
+            return stats
     @asyncio.coroutine
     def network_awrite_chunked(self, buf, addr):
         """
@@ -371,11 +404,28 @@ class ControlTasks:
         of the message, adds message number and chk for each, converts
         it to bytes and calls network_awrite for each
         """
+        def unpacker(a):
+            if isinstance(a[1],int):
+                return a
+            else:
+                return unpacker(a[1])
+        def unpack(packed):
+            return packed[0], unpacker(packed)
         chunks = networking.chunk_data_to_payload(buf)
         ##print('chunks is: ',chunks)
         byteified_msgs = map(networking.json_to_bytes, chunks)
+        nodenum = self.comm.inverse_address(addr)
+        try:
+            rssi = [i for i in self.neighbors if i['target'] ==nodenum][0]['value']
+        except:
+            rssi = None
+        stats = []
         for byte_chunk in byteified_msgs:
-            yield from self.send_and_wait(byte_chunk, addr)
+            packaged = yield from self.send_and_wait(byte_chunk, addr)
+            print('pack: ',packaged)
+            t, (retries,level) = unpack(packaged)
+            stats.append({'t':t,'retries':retries,'level':level})
+        return {'msgize':len(json.dumps(buf,separators=(',',':'))) ,'stats':stats,'rssi':rssi,'node':nodenum}        
          
     def acknowledge(self, msg):
         """on receipt of an ack from the network, add the msg id
@@ -383,38 +433,48 @@ class ControlTasks:
         ##print('acking')
         msg_id = msg['frame_id']
         status = msg['deliver_status']
-        self.completed_msgs[msg_id] = status    
+        retries = msg['retries'][0]
+        self.completed_msgs[msg_id] = (status,retries)    
         
     @asyncio.coroutine
     def check_acknowledged(self, msg_id):
         """check if the message associated with msg_id was 
         acknowledged. If no ack within 3 seconds, return failed"""
         counter = 0
-        while (msg_id not in self.completed_msgs) and (counter<3):
+        while (msg_id not in self.completed_msgs) and (counter<20):
             #print(msg_id,'not ack yet: ',  self.completed_msgs)
-            yield from asyncio.sleep(0.2)
+            yield from asyncio.sleep(0.05)
             counter+=1
         try:
-            status = self.completed_msgs[msg_id]
+            status,retries = self.completed_msgs[msg_id]
             del self.completed_msgs[msg_id]
         except KeyError:
             status = 'timed out'
-        return status
+            retries = None
+        return status, retries
     @asyncio.coroutine
-    def benchmark(self, data):
-        t, res = benchmark1(data)
-        self.most_recent_benchmark = t
-        result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id('benchmark'+str(data))}
-        yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+    def benchmark(self):
+        while True:
+            data = yield from self.comm.bm_q.get()
+            t, res = benchmark1(data)
+            self.most_recent_benchmark = t
+            result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id(random_word()+'bnch'+str(data))}
+            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
 
     @asyncio.coroutine
     def report_neighbours(self):
         while True:
             req = yield from self.comm.fn_queue.get()
             print('got req')
+            def srv(num):
+                val = 99 if num=='Server' else num
+                return str(val)
+            def cmp(ne):
+                return srv(ne['target'])+'_'+srv(ne['value'])
             neighbors = self.neighbors
-            result_tx = {'res':(1,json.dumps({'rs':neighbors})),'u':self.add_id('rs')}
-            print('result_tx',result_tx)
+            cmped = [cmp(n) for n in neighbors]
+            whole_thing = ('.').join(cmped)
+            result_tx = {'res':(1,json.dumps({'rs':whole_thing})),'u':self.add_id(random_word()+'rs')}
             yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
     @asyncio.coroutine
     def at_reader(self):
@@ -430,13 +490,23 @@ class ControlTasks:
                 #find rssi
                 rssi = payload[-1]
                 upsert_data = {'source':self.ID,'target':neighbor_number,'value':rssi}
-                self.neighbors.append(upsert_data)
+                self.upsert(upsert_data)
                 print('upsert_data:',upsert_data, self.neighbors)
+    def upsert(self, entry):
+        def uq(e):
+            return str(e['source'])+str(e['target'])
+        uqed = [uq(i) for i in self.neighbors]
+        try:
+            idx = uqed.index(uq(entry))
+            print('already had it: ',idx, entry, self.neighbors, )
+            self.neighbors[idx] = entry
+        except ValueError:
+            self.neighbors.append(entry)
     @asyncio.coroutine
     def find_neighbours(self):
         while True:
             self.get_fn()
-            yield from asyncio.sleep(30)
+            yield from asyncio.sleep(600)
     def get_fn(self):
         self.neighbors = []
         print('sending')
@@ -527,6 +597,70 @@ class ControlTasks:
                     yield from self.sense_worker(curried_func)
                     print('finished sampler')
                 if self.comm.ID in curried_func['map_nodes']:
+                    maps = curried_func['map_nodes']
+                    positions = [i for i,e in enumerate(maps) if e==self.comm.ID]
+                    for idx in positions:
+                        print('starting mapper',idx)
+                        data = yield from self.comm.sense_queue.get(str(idx)+'_'+curried_func['u'])
+                        print('got data')
+                        yield from self.map_worker(curried_func, data, idx)
+                        print('finished mapper')
+                if self.comm.ID in curried_func['reduce_nodes']:
+                    print('reducing')
+                    yield from self.reduce_worker(curried_func)
+                    print('reduced')
+                self.in_map = False                                                   
+            else:   
+                yield from self.comm.coro_queue.put(coro)
+                yield from asyncio.sleep(0)
+    @asyncio.coroutine
+    def sense_worker(self, curried_func):
+        map_idx = curried_func['sense_nodes'].index(self.comm.ID)
+        data = yield from curried_func['func'](curried_func['arg'])
+        message = {'s':data, 'u':str(map_idx)+'_'+curried_func['u']}
+        child_node = curried_func['map_nodes'][map_idx]
+        yield from self.node_to_node(message, self.comm.address_book[child_node])
+    def partitioner(self, key, reducer_ids):
+        idx = hash(key)%len(reducer_ids)
+        return reducer_ids[idx]
+    @asyncio.coroutine
+    def map_worker(self, curried_func, map_data, map_idx):
+        reduce_nodes= curried_func['reduce_nodes']
+        job_nodeid = self.add_id(curried_func['u']) 
+        gen = curried_func['map_func'](curried_func['map_arg'], map_data) #generator function
+        for j in timed_gen(gen, curried_func['u'], node=map_idx):
+            print('j is: ',j)
+            if isinstance(j, asyncio.Future):
+                yield j
+            else:
+                if j is not None:
+                    key,value = j
+                    dest_id = self.partitioner(key, reduce_nodes)
+                    reduce_dest = self.comm.address_book[dest_id]
+                    result = {'kv':j, 'u':job_nodeid}
+                    yield from self.node_to_node(result, reduce_dest)
+            # notify end of map function to reduce node
+            #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
+        reduce_node_addresses = [self.comm.address_book[i] for i in reduce_nodes]
+        for dest in reduce_node_addresses:
+            end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
+            yield from self.node_to_node(end_message, dest)
+        self.comm.sense_queue.remove(str(map_idx)+'_'+curried_func['u'])       
+        return
+    @asyncio.coroutine
+    def worker(self):
+        """
+        """
+        while True:
+            coro = yield from self.comm.coro_queue.get()     
+            if coro[0] < self.eventloop.time():
+                self.in_map = True
+                curried_func = coro[1]
+                if self.comm.ID in curried_func['sense_nodes']:
+                    print('starting sampler')
+                    yield from self.sense_worker(curried_func)
+                    print('finished sampler')
+                if self.comm.ID in curried_func['map_nodes']:
                     print('starting mapper')
                     data = yield from self.comm.sense_queue.get(curried_func['u'])
                     print('got data')
@@ -540,40 +674,6 @@ class ControlTasks:
             else:   
                 yield from self.comm.coro_queue.put(coro)
                 yield from asyncio.sleep(0)
-    @asyncio.coroutine
-    def sense_worker(self, curried_func):
-        data = yield from curried_func['func'](curried_func['arg'])
-        message = {'s':data, 'u':curried_func['u']}
-        mapper_idx = curried_func['sense_nodes'].index(self.comm.ID)
-        child_node = curried_func['map_nodes'][mapper_idx]
-        yield from self.node_to_node(message, self.comm.address_book[child_node])
-    def partitioner(self, key, reducer_ids):
-        idx = hash(key)%len(reducer_ids)
-        return reducer_ids[idx]
-    @asyncio.coroutine
-    def map_worker(self, curried_func, map_data):
-        reduce_nodes= curried_func['reduce_nodes']
-        job_nodeid = self.add_id(curried_func['u']) 
-        gen = curried_func['map_func'](curried_func['map_arg'], map_data) #generator function
-        for j in gen:
-            if isinstance(j, asyncio.Sleep):
-                yield j
-            else:
-                if j is not None:
-
-                    key,value = j
-                    dest_id = self.partitioner(key, reduce_nodes)
-                    reduce_dest = self.comm.address_book[dest_id]
-                    result = {'kv':j, 'u':job_nodeid}
-                    yield from self.node_to_node(result, reduce_dest)
-            # notify end of map function to reduce node
-            #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
-        reduce_node_addresses = [self.comm.address_book[i] for i in reduce_nodes]
-        for dest in reduce_node_addresses:
-            end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
-            yield from self.node_to_node(end_message, dest)
-        self.comm.sense_queue.remove(curried_func['u'])       
-        return
     #@asyncio.coroutine
     def get_groupedby(self,q):
         first_pair = q.get_nowait()
