@@ -1,7 +1,10 @@
-import np
+from algorithms import np
 import math
 def real_dft_matrix(n):
     W = [half_alternate(n, i) for i in range(n+1)]
+    return W
+def real_dft_matrix_generator(n):
+    W = (half_alternate(n, i) for i in range(n+1))
     return W
 def ortho_real_dft(n):
     W = [alternate(n, i) for i in range (0, 2*n)]
@@ -17,17 +20,29 @@ def complex_dft_matrix(n):
     return [c_pairs(lst) for lst in comb]
 def row_normed(nested_lst):
     return [atom_norm(i) for i in nested_lst]
+def row_normed_gen(nested_gen):
+    return (atom_norm(i) for i in nested_gen)
 def atom_norm(atom):
     return list(np.Vector(*atom).zero_mean_normalize())
 def zmean_real_dft(n):
     W = real_dft_matrix(n)
     return W[1::]
+def bleed_1(gen):
+    next(gen)
+    return gen
+def zmean_real_dft_gen(n):
+    W_gen = real_dft_matrix_generator(n)
+    return bleed_1(W_gen)
 def zmean_ortho_dft(n):
     W = ortho_real_dft(n)
     return W
 def bp_fourier(n):
     W = zmean_real_dft(n)
     A = t(row_normed(W[1::]))
+    return A
+def bp_fourier_generator(n):
+    W_gen = zmean_real_dft_gen(n)
+    A = t_gen(row_normed_gen(bleed_1(W_gen)))
     return A
 def alternate(N, idx):
     f = idx%N
@@ -71,7 +86,8 @@ def half_package(result):
 
 def t(l):
     return [list(i) for i in zip(*l)]
-
+def t_gen(l):
+    return (i for i in zip(*l))
 def normed(eg_array):
     return (eg_array - eg_array.mean(axis=0)) / np.linalg.norm(eg_array, axis = 0)
 

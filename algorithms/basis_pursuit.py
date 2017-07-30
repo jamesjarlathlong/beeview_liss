@@ -4,9 +4,9 @@ min ||x||_1 st Ax=b where b is the the signal
 A is a basis matrix and x is the solution vector
 """
 import math
-import np
-import coord_descent as cd
-import fourier_basis as ft
+from algorithms import np
+from algorithms import coord_descent as cd
+from algorithms import fourier_basis as ft
 
 def sk_bp(A, signal, alpha):
     clf = cd.Lasso(alpha=alpha, max_iter=100)
@@ -35,6 +35,11 @@ def sft(signal):
 	W = ft.bp_fourier(N)
 	v = np.Vector(*signal)
 	return v.matrix_mult(W)
+def mem_friendly_sft(signal):
+	N = len(signal)
+	W = ft.bp_fourier_generator(N)
+	v = np.Vector(*signal)
+	return v.gen_matrix_mult(W)
 def isft(spectrum):
     inverse_W = ft.inv_dft_mat(len(spectrum))
     v = np.Vector(*spectrum)

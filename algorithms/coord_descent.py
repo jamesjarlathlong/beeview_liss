@@ -1,6 +1,4 @@
-import np
-from copy import deepcopy
-import collections
+from algorithms import np
 def t(l):
     return [list(i) for i in zip(*l)]
 def memoize(function):
