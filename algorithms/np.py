@@ -1,5 +1,6 @@
 import math
 import gc
+import cmath
 class Vector(object):
     def __init__(self, *args):
         """ Create a vector, example: v = Vector(1,2) """
@@ -9,13 +10,13 @@ class Vector(object):
         """ Returns the norm (length, magnitude) of the vector """
         return math.sqrt(sum( comp**2 for comp in self ))
     def _zero_mean(self):
-    	mean = self.mean()
-    	zeroed = tuple(i-mean for i in self)
-    	return zeroed
+        mean = self.mean()
+        zeroed = tuple(i-mean for i in self)
+        return zeroed
     def zero_mean(self):
-    	return Vector(*self._zero_mean())
+        return Vector(*self._zero_mean())
     def mean(self):
-    	return sum(self)/len(self)      
+        return sum(self)/len(self)      
     def argument(self):
         """ Returns the argument of the vector, the angle clockwise from +y."""
         arg_in_rad = math.acos(Vector(0,1)*self/self.norm())
@@ -29,8 +30,8 @@ class Vector(object):
         normed = tuple( comp/norm for comp in self )
         return Vector(*normed)
     def zero_mean_normalize(self):
-    	zeroed = self.zero_mean()
-    	return zeroed.normalize()
+        zeroed = self.zero_mean()
+        return zeroed.normalize()
     def rotate(self, *args):
         """ Rotate this vector. If passed a number, assumes this is a 
             2D vector and rotates by the passed value in degrees.  Otherwise,
@@ -127,8 +128,8 @@ class Vector(object):
         subbed = tuple( a - b for a, b in zip(self, other) )
         return Vector(*subbed)
     def __pow__(self, other):
-    	powed = tuple(a**other for a in self)
-    	return Vector(*powed)
+        powed = tuple(a**other for a in self)
+        return Vector(*powed)
     
     def __iter__(self):
         return iter(self.values)#.__iter__()
@@ -142,15 +143,30 @@ class Vector(object):
     def __repr__(self):
         return str(self.values)
 def change_idx(vector, idx, new_value):
-	copied = list(vector)
-	copied[idx] = new_value
-	return Vector(*copied)
+    copied = list(vector)
+    copied[idx] = new_value
+    return Vector(*copied)
 
 def get_column(nested_lst, idx):
-	return [i[idx] for i in nested_lst]
+    return [i[idx] for i in nested_lst]
 
 def get_column_as_vec(nested_lst, idx):
-	return Vector(*get_column(nested_lst, idx))
+    return Vector(*get_column(nested_lst, idx))
+
+def radix2(x):
+    N = len(x)
+    if N <= 1: return x
+    even = fft(x[0::2])
+    odd =  fft(x[1::2])
+    T= [cmath.exp(-2j*cmath.pi*k/N)*odd[k] for k in range(N//2)]
+    return [even[k] + T[k] for k in range(N//2)] + \
+           [even[k] - T[k] for k in range(N//2)]
+def zero_mean(x):
+    a = np.Vector(*x)
+    return a._zero_mean()
+def fft(x):
+    return radix2(zero_mean(x))
+
 
 
 
