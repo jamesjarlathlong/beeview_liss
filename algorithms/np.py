@@ -156,16 +156,16 @@ def get_column_as_vec(nested_lst, idx):
 def radix2(x):
     N = len(x)
     if N <= 1: return x
-    even = fft(x[0::2])
-    odd =  fft(x[1::2])
+    even = radix2(x[0::2])
+    odd =  radix2(x[1::2])
     T= [cmath.exp(-2j*cmath.pi*k/N)*odd[k] for k in range(N//2)]
     return [even[k] + T[k] for k in range(N//2)] + \
            [even[k] - T[k] for k in range(N//2)]
 def zero_mean(x):
-    a = np.Vector(*x)
+    a = Vector(*x)
     return a._zero_mean()
 def fft(x):
-    return radix2(zero_mean(x))
+    return radix2(list(zero_mean(x)))
 
 
 
