@@ -11,6 +11,7 @@ import accelreader
 import networking
 from algorithms import np
 import urandom
+import ujson
 def timeit(method):
     def timed(*args, **kw):
         ts = time.time()
@@ -90,8 +91,7 @@ class Comm:
         self.zbee_id = 0
         self.ID = int(os.getenv("NODE_ID"))
         print('ID is: ', self.ID)
-        self.address_book = {'Server': b'\x00\x13\xa2\x00@\xdasp',
-                            99: b'\x00\x13\xa2\x00@\xdasp',
+        self.address_book = {99: b'\x00\x13\xa2\x00@\xdasp',
                             15: b'\x00\x13\xa2\x00AZ\xe8n',17: b'\x00\x13\xa2\x00AZ\xe8s',
                             18: b'\x00\x13\xa2\x00A\x05F\x99',21: b'\x00\x13\xa2\x00A\x05H}',
                             22: b'\x00\x13\xa2\x00A\x05F\xa2',29: b'\x00\x13\xa2\x00A\x05H\x81',
@@ -163,10 +163,10 @@ def handle_accel(comm, loop):
     data  from serial port and place it on the accel q"""
     while comm.accel.inWaiting()<4095:
         time.sleep(0.05)
-        ##print('waiting for buffer to fill')
+        print('waiting for buffer to fill')
     acc = comm.accel.read(4095)
-    ##print('read all available',len(acc))
-    for byt in acc[0:1000]:
+    print('read all available',len(acc))
+    for byt in acc:
         try:
             comm.accelq.put_nowait(bytes([byt]))
         except (asyncio.QueueFull, MemoryError) as e:
@@ -174,7 +174,7 @@ def handle_accel(comm, loop):
     del acc
     loop.remove_reader(comm.accel.fd)
     #loop.remove_reader(comm.accel.fd)
-    #loop.add_reader(comm.accel.fd, handle_accel, comm, loop)
+    loop.add_reader(comm.accel.fd, handle_accel, comm, loop)
 def flatten(L):
     for item in L:
         try:
@@ -192,7 +192,7 @@ class ControlTasks:
     def __init__(self,loop,comm):
         self.ID = int(os.getenv("NODE_ID")) 
         self.eventloop = loop
-        self.sleep_for = 1
+        self.sleep_for = 0#""""was 1- editing for woburn site"""""1
         self.sleep_mode = ControlTasks.IDLE_SLEEP
         self.wait_atleast = {ControlTasks.IDLE_SLEEP: 0.1, ControlTasks.DEEP_SLEEP: 0.1}
         self.in_map = False
@@ -237,7 +237,7 @@ class ControlTasks:
             try:
                 ##print('checking packet')
                 result = crc.check_packet(packet)
-                ##print('got a packet')
+                print('got a packet')
                 acc = accelreader.packet_to_3accels(result)
                 g_acc = list(map(accelreader.int_to_gs, acc))
                 return g_acc
@@ -246,12 +246,22 @@ class ControlTasks:
                 packet = packet[1::]#remove the first byte
                 ##print('no packet yet')
                 
-        
+    @asyncio.coroutine
+    def testaccel(self, sample_length):
+        fname = '192.168.123.{}.json'.format(self.ID)
+        print('opening: ',fname)
+        gc.collect()
+        print(gc.mem_free())
+        with open(fname) as json_data:
+            d = ujson.loads(json_data.read())
+            yield from asyncio.sleep(0)
+            trimmed = {k:v[0:sample_length] for k,v in d.items()}  
+            return trimmed 
     @asyncio.coroutine
     def accel(self, sample_length):
         """Read from the accelerometer a sample of length sample length.
-           Accelerometer samples at 1000Hz, so if sample_length = 2000,
-           the reading will be for 2 seconds."""
+           Accelerometer samples at 2000Hz, so if sample_length = 2000,
+           the reading will be for 4 seconds."""
         result = {'x':[],'y':[],'z':[]}     
         self.comm.accel.open()
         self.eventloop.add_reader(self.comm.accel.fd, handle_accel, self.comm, self.eventloop)
@@ -260,7 +270,7 @@ class ControlTasks:
             self.comm.accel.write('gimmie')
         while len(result['x'])<sample_length:
             packet = yield from self.accelpacketyielder()
-            ##print('len packet: ', len(packet))
+            print('len packet: ', len(packet),len(self.comm.accelq._queue),self.comm.accel.inWaiting() )
             result['x'].extend(packet[0::3])
             result['y'].extend(packet[1::3])
             result['z'].extend(packet[2::3])
@@ -464,7 +474,7 @@ class ControlTasks:
             t, res = benchmark1(data)
             self.most_recent_benchmark = t
             result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id(random_word()+'bnch'+str(data))}
-            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+            yield from self.node_to_node(result_tx, self.comm.address_book[99])
 
     @asyncio.coroutine
     def report_neighbours(self):
@@ -480,7 +490,7 @@ class ControlTasks:
             cmped = [cmp(n) for n in neighbors]
             whole_thing = ('.').join(cmped)
             result_tx = {'res':(1,json.dumps({'rs':whole_thing})),'u':self.add_id(random_word()+'rs')}
-            yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+            yield from self.node_to_node(result_tx, self.comm.address_book[99])
     @asyncio.coroutine
     def at_reader(self):
         while True:
@@ -702,7 +712,7 @@ class ControlTasks:
         result_tx =  {'res':(num_reducers,nested_json_dump(results)),'u':self.add_id(curried_func['u'])}
         print('reduce finished: ', result_tx)
         #return to sink node
-        yield from self.node_to_node(result_tx, self.comm.address_book['Server'])
+        yield from self.node_to_node(result_tx, self.comm.address_book[99])
         print('map-reduce finished')
         self.comm.kv_queue.remove(user) 
         return
@@ -805,7 +815,7 @@ def main():
     controller.eventloop.run_forever()
     controller.eventloop.close()
     trx = comm.ZBee.send('tx', data=bytes( json.dumps({'update':'exiting'}), 'ascii' ),
-                         dest_addr_long=comm.address_book['Server'], dest_addr=b'\xff\xfe')
+                         dest_addr_long=comm.address_book[99], dest_addr=b'\xff\xfe')
     return
 if __name__ == '__main__':
     main()
