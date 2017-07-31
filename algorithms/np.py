@@ -176,7 +176,7 @@ def rand_unif():
 def spectral_mat(ws):
     one_row = lambda i,lst: [i*conj(e) for e in lst]
     all_rows = lambda lst:[one_row(i,lst) for i in lst]
-    return all_rows
+    return all_rows(ws)
 def pagerank(lst_of_lists, max_iter = 100):
     n = len(lst_of_lists)
     initial = Vector(*[rand_unif()+1j*rand_unif() for i in range(n)])
