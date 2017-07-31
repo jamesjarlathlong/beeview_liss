@@ -10,8 +10,15 @@ import crc32
 import accelreader
 import networking
 from algorithms import np
+from algorithms import basis_pursuit as bp
+from algorithms import fourier_basis as ft
 import urandom
+urandom.seed(int(os.getenv("NODE_ID")))
 import ujson
+def argmax(complex_list):
+    abs_list = list(map(abs, complex_list))
+    idx = abs_list.index(max(abs_list))
+    return idx, complex_list[idx]
 def timeit(method):
     def timed(*args, **kw):
         ts = time.time()
@@ -45,7 +52,7 @@ def append_record(filename,record):
 def write_stats_to_file(method):
     def writestats(*args):
         stats = yield from method(*args)
-        append_record('tx_stats',stats)
+        append_record('/etc/init.d/beeview_liss/tx_stats',stats)
         return stats
     return writestats
 def timed_gen(gen, user, key=None, node=None):
@@ -59,9 +66,9 @@ def timed_gen(gen, user, key=None, node=None):
             break
     print('timed gen**********',user,key,node)
     if key:
-        append_record('px_stats',{'type':'reducer','ts':ts,'onkey':key,'job':user})
+        append_record('/etc/init.d/beeview_liss/px_stats',{'type':'reducer','ts':ts,'onkey':key,'job':user})
     else:
-        append_record('px_stats',{'type':'mapper','ts':ts,'mapnum':node,'job':user})
+        append_record('/etc/init.d/beeview_liss/px_stats',{'type':'mapper','ts':ts,'mapnum':node,'job':user})
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -191,6 +198,7 @@ class ControlTasks:
     IDLE_SLEEP = 1
     def __init__(self,loop,comm):
         self.ID = int(os.getenv("NODE_ID")) 
+        self.np = np
         self.eventloop = loop
         self.sleep_for = 0#""""was 1- editing for woburn site"""""1
         self.sleep_mode = ControlTasks.IDLE_SLEEP
@@ -248,15 +256,23 @@ class ControlTasks:
                 
     @asyncio.coroutine
     def testaccel(self, sample_length):
-        fname = '192.168.123.{}.json'.format(self.ID)
+        fname = '/etc/init.d/beeview_liss/192.168.123.{}.json'.format(self.ID)
         print('opening: ',fname)
         gc.collect()
         print(gc.mem_free())
-        with open(fname) as json_data:
-            d = ujson.loads(json_data.read())
-            yield from asyncio.sleep(0)
-            trimmed = {k:v[0:sample_length] for k,v in d.items()}  
-            return trimmed 
+        i=0
+        while True:
+            try:
+                with open(fname) as json_data:
+                    d = ujson.loads(json_data.read())
+                    yield from asyncio.sleep(0)
+                    trimmed = {k:v[0:sample_length] for k,v in d.items()}
+                    return trimmed
+            except MemoryError:
+                gc.collect()
+                i+=1 
+                trimmed = []
+        return trimmed 
     @asyncio.coroutine
     def accel(self, sample_length):
         """Read from the accelerometer a sample of length sample length.
@@ -654,7 +670,7 @@ class ControlTasks:
             #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
         reduce_node_addresses = [self.comm.address_book[i] for i in reduce_nodes]
         for dest in reduce_node_addresses:
-            end_message = {'kv':("MAP_DONE",0), 'u':job_nodeid}
+            end_message = {'kv':("MAP_DONE",random_word()), 'u':job_nodeid}
             yield from self.node_to_node(end_message, dest)
         self.comm.sense_queue.remove(str(map_idx)+'_'+curried_func['u'])       
         return
@@ -686,12 +702,15 @@ class ControlTasks:
         i = 0
         #check if all num_mappers have given a map_done message
         results = {}
+        already_seen = set()
         while i<num_mappers:
             yield from asyncio.sleep(0.05)
             kv = yield from self.comm.kv_queue.get(user)
             if kv[0].x == "MAP_DONE":
-                ##print('got map done from ',i)  
-                i+=1
+                ##print('got map done from ',i)
+                if kv[1] not in already_seen:  
+                    i+=1
+                    already_seen.add(kv[1])
             else:
                 yield from self.comm.kv_queue.put(kv, user)
         #getting here means all map functions are finished- q size wont change in this function
