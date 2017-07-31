@@ -613,8 +613,8 @@ class ControlTasks:
             time_received = self.eventloop.time()
             class_def = data['f']
             if isinstance(class_def, tuple):
-                class_def = class_def[0]
                 sid = class_def[1]
+                class_def = class_def[0]
             else:
                 sid = None
             user = data['u']
