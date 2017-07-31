@@ -15,6 +15,9 @@ from algorithms import fourier_basis as ft
 import urandom
 urandom.seed(int(os.getenv("NODE_ID")))
 import ujson
+
+def conj(a):
+    return a.real-1j*a.imag
 def argmax(complex_list):
     abs_list = list(map(abs, complex_list))
     idx = abs_list.index(max(abs_list))
@@ -391,7 +394,7 @@ class ControlTasks:
         SenseReduce class, create this class from the string of code"""
         exec(source_code)
         job_class = locals()['SenseReduce']
-        shortcut = self.get_shortcut(source_code)
+        shortcut = None#self.get_shortcut(source_code)
         if shortcut:
             sid = self.get_shortcut(shortcut)
             job_class.sampler =sid.sampler
