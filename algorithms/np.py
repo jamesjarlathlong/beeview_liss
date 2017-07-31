@@ -73,7 +73,7 @@ class Vector(object):
         for idx,row in enumerate(matrix):
             product[idx] = Vector(*row)*self
             try:
-                gc.mem_free()
+                gc.collect()
             except:
                 pass
         return Vector(*product)

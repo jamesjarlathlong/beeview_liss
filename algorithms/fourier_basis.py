@@ -100,7 +100,8 @@ def package(result):
     zipped = zip(result[0:n], result[n:2*n])
     return [imagify(pair) for pair in zipped]
 
-def half_package(result):
+def half_package(res):
+    result = list(res)
     n = len(result)//2
     zipped = zip(result[0::2], result[1::2])
     return [imagify(pair) for pair in zipped]

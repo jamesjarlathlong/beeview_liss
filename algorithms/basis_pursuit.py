@@ -18,6 +18,8 @@ def sparseft(signal, alpha=1e-4):
 	v = np.Vector(*signal).zero_mean_normalize()
 	spectrum = sk_bp(W, v, alpha)
 	return spectrum
+def l1_ft(signal):
+	return ft.half_package(sparseft(signal))
 def sparse_rep(spectrum):
 	return {idx+1:val for idx,val in enumerate(spectrum) if val}
 def inverse_ft(spectrum):
