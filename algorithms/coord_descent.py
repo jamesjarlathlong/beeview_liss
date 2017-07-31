@@ -4,11 +4,11 @@ def t(l):
 def memoize(function):
 	memo = {}
 	def wrapper(*args):
-		if args[0] in memo:
-			return memo[args[0]]
+		if str(args[0]) in memo:
+			return memo[str(args[0])]
 		else:
 			rv = function(*args)
-			memo[args[0]] = rv
+			memo[str(args[0])] = rv
 			return rv
 	return wrapper
 def purge(d, n):
@@ -19,7 +19,8 @@ def tuple_memoize(function):
 	meta_memo = {}
 	memo = {}
 	def wrapper(*args):
-		_id = frozenset(args[0])
+		str_args = [(i[0],str(i[1])) for i in args[0]]
+		_id = frozenset(str_args)
 		idxs = frozenset(pair[0] for pair in _id)
 		fmatted = sorted([i for i, val in _id])
 		if _id in memo:
@@ -83,7 +84,7 @@ class Lasso():
 		r_j = y - self.cached_mult(tmp_beta, XT, recursive=True)
 		arg1 = r_j.inner(XT[j])
 		arg2 = self.alpha*len(X)
-		new_beta_j = self._soft_thresholding_operator(arg1, arg2)/sum(np.Vector(*XT[j])**2)
+		new_beta_j = self._soft_thresholding_operator(arg1, arg2)/sum(np.Vector(*XT[j]).__pow__(2))
 		return np.change_idx(beta, j, new_beta_j)
 	def cached_mult(self,tmp_beta, XT, recursive=False):
 		active_coefs = get_active(tmp_beta)
