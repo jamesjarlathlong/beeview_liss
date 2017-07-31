@@ -380,14 +380,24 @@ class ControlTasks:
         #exec(reduce_code)
         return reduce_func, reducer#(locals()['reducer'])
         #curried_runfunc = {'reduce_func':reduce_func,'arg': (locals()['reducer']) }    
-    
+    def get_shortcut(self, source):
+        sid = source.get('sid')
+        if sid:
+            sid_def = self.shortcuts[sid]
+            exec(sid_def)
+            return locals()['SenseReduce']()
     def class_definer(self, source_code):
         """given the user specified source code for the
         SenseReduce class, create this class from the string of code"""
         exec(source_code)
-        job_class = locals()['SenseReduce']()
-        return job_class
-    
+        job_class = locals()['SenseReduce']
+        shortcut = self.get_shortcut(source_code)
+        if shortcut:
+            sid = self.get_shortcut(shortcut)
+            job_class.sampler =sid.sampler
+            job_class.mapper = sid.mapper
+            job_class.reducer = sid.reducers
+        return job_class()    
     @asyncio.coroutine
     def radio_listener(self):
         while True:
