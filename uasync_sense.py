@@ -212,6 +212,21 @@ class ControlTasks:
         self.sleep_handlers = {ControlTasks.IDLE_SLEEP: self.idle_sleep, ControlTasks.DEEP_SLEEP: self.deep_sleep} 
         self.completed_msgs = {}
         self.neighbors = []
+        self.shortcut = {"fdd_single":"""
+    def sampler(self,node):
+        acc = yield from node.testaccel(512)
+        return (node.ID,acc)
+    def mapper(self,node,d):
+        fts = np.fft(d[1]['x'])
+        c = lambda d: (d.real,d.imag)
+        yield(0,(d[0],c(fts[6])))
+    def reducer(self,node,k,vs):
+        ws = [complex(*i[1]) for i in vs]
+        G = np.spectral_mat(ws)
+        eig = np.pagerank(G)
+        c = lambda d: (d.real,d.imag)
+        ms = [(vs[idx][0],c(el)) for idx,el in enumerate(eig)]
+        yield(k,ms)"""}
     def package(self, job_class, time_received, user):
         #======================#sense stage#======================#    
         exec_time, curried_runfunc = self.package_senser(job_class.sampler,
@@ -380,23 +395,21 @@ class ControlTasks:
         #exec(reduce_code)
         return reduce_func, reducer#(locals()['reducer'])
         #curried_runfunc = {'reduce_func':reduce_func,'arg': (locals()['reducer']) }    
-    def get_shortcut(self, source):
-        sid = source.get('sid')
-        if sid:
-            sid_def = self.shortcuts[sid]
-            exec(sid_def)
-            return locals()['SenseReduce']()
-    def class_definer(self, source_code):
+    def monkey_patch(self,sid_code, job_class):
+        monkey_class ="class Monkey:\n   "+sid_code
+        exec(monkey_class)
+        monkey = locals()['Monkey']
+        job_class.sampler = monkey.sampler
+        job_class.mapper = monkey.mapper
+        job_class.reducer = monkey.reducer
+        return job_class
+    def class_definer(self, source_code,shortcut = None):
         """given the user specified source code for the
         SenseReduce class, create this class from the string of code"""
         exec(source_code)
         job_class = locals()['SenseReduce']
-        shortcut = self.get_shortcut(source_code)
         if shortcut:
-            sid = self.get_shortcut(shortcut)
-            job_class.sampler =sid.sampler
-            job_class.mapper = sid.mapper
-            job_class.reducer = sid.reducers
+            job_class = self.monkey_patch(shortcut, job_class)
         return job_class()    
     @asyncio.coroutine
     def radio_listener(self):
@@ -597,7 +610,9 @@ class ControlTasks:
             time_received = self.eventloop.time()
             class_def = data['f']
             user = data['u']
-            job_class = self.class_definer(class_def)
+            sid = data.get('sid')
+            shortcut_code = self.shortcut.get(sid)
+            job_class = self.class_definer(class_def,shortcut =shortcut_code)
             try:
                 repeat = job_class.repeat
             except AttributeError:
