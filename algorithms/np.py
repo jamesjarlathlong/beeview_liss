@@ -1,7 +1,7 @@
 import math
 import gc
 import cmath
-import random as urandom
+import urandom
 def conj(a):
     return a.real-1j*a.imag
 class Vector(object):
