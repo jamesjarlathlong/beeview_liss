@@ -167,6 +167,9 @@ def zero_mean(x):
 def fft(x):
     return radix2(list(zero_mean(x)))
 
+def pagerank(lst_of_lsts):
+    
+
 
 
 
