@@ -612,8 +612,12 @@ class ControlTasks:
             print('got a function: ', data)
             time_received = self.eventloop.time()
             class_def = data['f']
+            if isinstance(class_def, tuple):
+                class_def = class_def[0]
+                sid = class_def[1]
+            else:
+                sid = None
             user = data['u']
-            sid = data.get('sid')
             shortcut_code = self.shortcut.get(sid)
             job_class = self.class_definer(class_def,shortcut =shortcut_code)
             try:
