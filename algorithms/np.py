@@ -1,6 +1,9 @@
 import math
 import gc
 import cmath
+import urandom
+def conj(a):
+    return a.real-1j*a.imag
 class Vector(object):
     def __init__(self, *args):
         """ Create a vector, example: v = Vector(1,2) """
@@ -9,6 +12,8 @@ class Vector(object):
     def norm(self):
         """ Returns the norm (length, magnitude) of the vector """
         return math.sqrt(sum( comp**2 for comp in self ))
+    def cnorm(self):
+        return math.sqrt(sum((comp*conj(comp)).real for comp in self))
     def _zero_mean(self):
         mean = self.mean()
         zeroed = tuple(i-mean for i in self)
@@ -166,6 +171,23 @@ def zero_mean(x):
     return a._zero_mean()
 def fft(x):
     return radix2(list(zero_mean(x)))
+def rand_unif():
+    return 1-2*urandom.getrandbits(8)/255
+def spectral_mat(ws):
+    one_row = lambda i,lst: [i*conj(e) for e in lst]
+    all_rows = lambda lst:[one_row(i,lst) for i in lst]
+    return all_rows
+def pagerank(lst_of_lists, max_iter = 100):
+    n = len(lst_of_lists)
+    initial = Vector(*[rand_unif()+1j*rand_unif() for i in range(n)])
+    for n in range(max_iter):
+        new_initial = Vector(*initial)
+        xi=new_initial.matrix_mult(lst_of_lists)
+        l_norm = xi.cnorm()
+        xi = [i/l_norm for i in xi]
+        if (new_initial-xi).cnorm()<1e-10:
+            break
+    return xi
 
 def pagerank(lst_of_lsts):
     
