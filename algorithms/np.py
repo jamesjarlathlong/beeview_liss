@@ -177,20 +177,28 @@ def spectral_mat(ws):
     one_row = lambda i,lst: [i*conj(e) for e in lst]
     all_rows = lambda lst:[one_row(i,lst) for i in lst]
     return all_rows(ws)
-def pagerank(lst_of_lists, max_iter = 100):
+def abs_max(v):
+     ab =[abs(i) for i in v]
+     return v[ab.index(max(ab))]
+def scale(res):
+    big = abs_max(res)
+    return [i/big for i in res]
+def pagerank(lst_of_lists, max_iter = 1000):
     n = len(lst_of_lists)
     initial = Vector(*[rand_unif()+1j*rand_unif() for i in range(n)])
+    xi = Vector(*initial)
     for n in range(max_iter):
-        new_initial = Vector(*initial)
+        print('iteration: ',n)
+        new_initial = Vector(*xi)
         xi=new_initial.matrix_mult(lst_of_lists)
         l_norm = xi.cnorm()
         xi = [i/l_norm for i in xi]
-        if (new_initial-xi).cnorm()<1e-10:
+        diff = (new_initial-xi).cnorm()
+        print('diff: ',diff)
+        if diff<1e-10:
+            print('converged: ',new_initial, xi)
             break
-    return xi
-
-
-
+    return scale(xi)
 
 
 

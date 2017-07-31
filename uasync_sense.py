@@ -687,6 +687,7 @@ class ControlTasks:
         reduce_nodes= curried_func['reduce_nodes']
         job_nodeid = self.add_id(curried_func['u']) 
         gen = curried_func['map_func'](curried_func['map_arg'], map_data) #generator function
+        counter = 0
         for j in timed_gen(gen, curried_func['u'], node=map_idx):
             print('j is: ',j)
             if isinstance(j, asyncio.Sleep):
@@ -696,13 +697,16 @@ class ControlTasks:
                     key,value = j
                     dest_id = self.partitioner(key, reduce_nodes)
                     reduce_dest = self.comm.address_book[dest_id]
-                    result = {'kv':j, 'u':job_nodeid}
+                    prefix = format(counter,'02d')
+                    result = {'kv':j, 'u':prefix+job_nodeid}
                     yield from self.node_to_node(result, reduce_dest)
+                    counter+=1
             # notify end of map function to reduce node
             #end_message = bytes(json.dumps ( {'kv_pair':("MAP_DONE",0), 'u':curried_func['u']} ), 'ascii')
         reduce_node_addresses = [self.comm.address_book[i] for i in reduce_nodes]
         for dest in reduce_node_addresses:
-            end_message = {'kv':("MAP_DONE",random_word()), 'u':job_nodeid}
+            prefix = format(counter,'02d')
+            end_message = {'kv':("MAP_DONE",random_word()), 'u':counter+job_nodeid}
             yield from self.node_to_node(end_message, dest)
         self.comm.sense_queue.remove(str(map_idx)+'_'+curried_func['u'])       
         return
