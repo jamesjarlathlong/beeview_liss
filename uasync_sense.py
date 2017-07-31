@@ -612,7 +612,7 @@ class ControlTasks:
             print('got a function: ', data)
             time_received = self.eventloop.time()
             class_def = data['f']
-            if isinstance(class_def, tuple):
+            if isinstance(class_def, tuple) or isinstance(class_def,list):
                 sid = class_def[1]
                 class_def = class_def[0]
             else:
