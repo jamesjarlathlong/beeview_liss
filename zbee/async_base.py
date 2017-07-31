@@ -5,11 +5,42 @@ import utime as time
 import ustruct as struct
 from zbee.frame import APIFrame
 from zbee.python2to3 import byteToInt, intToByte
-print('new version')
+def assemble_result(pieces):
+    """pieces is a list of result messages that need to be pieced together before returning"""
+    return {k:v for sub in pieces for k,v in sub.items()}
 class XBeeAsync(XBeeBase):
     """Subclass of XBeeBase that fits with asynchronous event loop"""
     @asyncio.coroutine
-    def wait_read_multipleframes(self,dataq,output_q):
+    def wait_read_multipleframes(self, dataq, intermediate_output_q, outputq):
+        """gets data from dataq, calls assemble_chunks to piece it to a full rf message
+        then additionally checks to see if it's a multi part result message before putting it 
+        on the outputq
+        """
+        multiple_accumulator = {}
+        while True:
+            msg = yield from intermediate_output_q.get()
+            #blah blah blah-ok i think this is a full packet so try to get rf data
+            #then try to get 'res' field
+            data = json.loads(msg.get('rf_data',"{}"))
+            res_chunk = data.get('res')
+            if res_chunk:#exists put in dictionary
+                #now check if full pieces
+                num_reducers = res_chunk[0]
+                reduce_data = json.loads(res_chunk[1])
+                username_job = data['u']
+                previous = multiple_accumulator.get(username_job) 
+                if not previous:
+                    multiple_accumulator[username_job] = []
+                multiple_accumulator[username_job].append(reduce_data)
+                if len(multiple_accumulator[username_job]) == num_reducers:
+                    pieced = assemble_result(multiple_accumulator[username_job])
+                    rf_data = json.dumps({'res': pieced, 'u':username_job})
+                    msg['rf_data'] = rf_data
+                    yield from outputq.put(msg)
+            else:
+                yield from outputq.put(data)
+    @asyncio.coroutine
+    def assemble_chunks(self, intermediate_output_q, dataq):
         chunk_def = {}
         while True:
             #print('got called')
@@ -37,7 +68,7 @@ class XBeeAsync(XBeeBase):
                         pass
                     if chunk_type == 'kv':
                         print('got a kv: ', job_id, data) 
-                        base_job_id = job_id[2::] # ie job_id = '91abcde'                    
+                        base_job_id = job_id[4::] # ie job_id = '12391abcde' i.e yield number and nodenumber                
                     try:
                         chunk_def[job_id]
                         #print('already a list')
@@ -70,12 +101,14 @@ class XBeeAsync(XBeeBase):
                         del chunk_def[job_id][chunk_type]
                         if not chunk_def[job_id]:
                             del chunk_def[job_id]
-                        yield from output_q.put(msg) #put the pieced back together message on the output q                        
+                        yield from intermediate_output_q.put(msg) #put the pieced back together message on the output q                        
                 except (KeyError, ValueError) as e: #no end message means a single transmission
                     #print('returning because of exception',e)
-                    yield from output_q.put(msg) #put a single back together message on the output q   
+                    yield from intermediate_output_q.put(msg) #put a single back together message on the output q   
             except (KeyError, ValueError) as e:
-                yield from output_q.put(msg)#put the ack message on the q
+                """think this is where I need to add AT command response handling
+                although actually it gets put on the output q anyway"""
+                yield from intermediate_output_q.put(msg)#put the ack message on the q
     
     @asyncio.coroutine
     def _wait_for_frame(self, dataq):
