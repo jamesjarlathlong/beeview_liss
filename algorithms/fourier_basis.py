@@ -4,7 +4,7 @@ def real_dft_matrix(n):
     W = [half_alternate(n, i) for i in range(n+1)]
     return W
 def real_dft_matrix_generator(n):
-    W = (half_alternate(n, i) for i in range(n+1))
+    W = [half_alternate_gen(n, i) for i in range(n+1)]
     return W
 def ortho_real_dft(n):
     W = [alternate(n, i) for i in range (0, 2*n)]
@@ -28,8 +28,7 @@ def zmean_real_dft(n):
     W = real_dft_matrix(n)
     return W[1::]
 def bleed_1(gen):
-    next(gen)
-    return gen
+    return gen[1::]
 def zmean_real_dft_gen(n):
     W_gen = real_dft_matrix_generator(n)
     return bleed_1(W_gen)
@@ -40,10 +39,17 @@ def bp_fourier(n):
     W = zmean_real_dft(n)
     A = t(row_normed(W[1::]))
     return A
+def take_one_from_each(nested_gen,factor):
+    n = len(nested_gen)
+    for idx,gen in enumerate(nested_gen):
+        factor = 1 if idx==n-1 else factor
+        yield next(gen)/factor
 def bp_fourier_generator(n):
     W_gen = zmean_real_dft_gen(n)
-    A = t_gen(row_normed_gen(bleed_1(W_gen)))
-    return A
+    A = bleed_1(W_gen)
+    for i in range(n):
+        factor = 1/math.sqrt(2)
+        yield take_one_from_each(A,factor)
 def alternate(N, idx):
     f = idx%N
     cos = idx<N
@@ -52,12 +58,28 @@ def half_alternate(N, idx):
     f = idx//2
     even = idx%2 ==0
     return cos_atom(N,f) if even else sin_atom(N,f)
+def half_alternate_gen(N,idx):
+    f = idx//2
+    even = idx%2 ==0
+    return cos_atom_gen(N,f) if even else sin_atom_gen(N,f)
 def cos_atom(N,f):
     scale = 1/math.sqrt(N)
     return [scale*math.cos(2*math.pi*f*i/N) for i in range(N)]
 def sin_atom(N, f):
     scale = -1/math.sqrt(N)
     return [scale*math.sin(2*math.pi*f*i/N) for i in range(N)]
+def cos_atom_gen(N,f):
+    scale = 1/math.sqrt(N)
+    return (scale*math.cos(2*math.pi*f*i/N) for i in range(N))
+def sin_atom_gen(N, f):
+    scale = -1/math.sqrt(N)
+    return (scale*math.sin(2*math.pi*f*i/N) for i in range(N))
+def single_sin_atom(N,f,i):
+    scale = -1/math.sqrt(N)
+    return scale*math.sin(2*math.pi*f*i/N)
+def single_cos_atom(N,f,i):
+    scale = -1/math.sqrt(N)
+    return scale*math.cos(2*math.pi*f*i/N)
 def transp(mat):
     """psueudo inverse of the full (including DC) fourier matrix"""
     N = len(mat[0])
