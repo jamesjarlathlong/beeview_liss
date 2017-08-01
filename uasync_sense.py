@@ -15,7 +15,18 @@ from algorithms import fourier_basis as ft
 import urandom
 urandom.seed(int(os.getenv("NODE_ID")))
 import ujson
-
+def macrotimer(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        user = yield from method(*args, **kw)
+        te = time.time()
+        ex_time = te-ts
+        append_record('/etc/init.d/beeview_liss/macro',{'u':user,'t':ex_time})
+        return user
+    return timed
+def format(i,x):
+    diff = 2-len(str(i))
+    return (diff*'0'+str(i))[0:2]
 def conj(a):
     return a.real-1j*a.imag
 def argmax(complex_list):
@@ -193,6 +204,14 @@ def flatten(L):
             yield item
 def unroll(node_list):
     return list(flatten(node_list))
+def shortnodes(i):
+    confe = """class SenseReduce:
+    def __init__(self):
+        self.sensenodes = [17,18,29,55,31,46,39,22,15,64,68,69]
+        self.mapnodes = [17,18,29,55,31,46,39,22,15,64,68,69]
+        self.reducenodes = {}
+        self.l = 512""".format(i)
+    return confe
 class ControlTasks:
     SLEEP_READY = 0
     BUSY = 1
@@ -227,9 +246,24 @@ class ControlTasks:
         ws = [complex(*i[1]) for i in vs]
         G = np.spectral_mat(ws)
         eig = np.pagerank(G)
-        c = lambda d: (d.real,d.imag)
+        c = lambda d: (round(d.real,2),round(d.imag,2))
         ms = [(vs[idx][0],c(el)) for idx,el in enumerate(eig)]
-        yield(k,ms)"""}
+        yield(k,ms)""","dfdd":"""
+    def sampler(self,node):
+        acc = yield from node.testaccel(512)
+        return (node.ID,acc)
+    def mapper(self,node,d):
+        fts = np.fft(d[1]['x'])
+        c = lambda d: (d.real,d.imag)
+        k = hash(node.ID)%4
+        yield(k,(d[0],c(fts[6])))
+    def reducer(self,node,k,vs):
+        ws = [complex(*i[1]) for i in vs]
+        G = np.spectral_mat(ws)
+        eig = np.pagerank(G)
+        c = lambda d: (round(d.real,2),round(d.imag,2))
+        ms = [(vs[idx][0],c(el)) for idx,el in enumerate(eig)]
+        yield(node.ID,ms)"""}
     def package(self, job_class, time_received, user):
         #======================#sense stage#======================#    
         exec_time, curried_runfunc = self.package_senser(job_class.sampler,
@@ -446,7 +480,7 @@ class ControlTasks:
         if address == self_address:
             if 'kv' in message:
                 print('node to node: ', message)
-                message['u'] = message['u'][2::]#don't need nodeid concat
+                message['u'] = message['u'][4::]#don't need nodeid concat
             if 'res' in message:
                 message['res'] = json.loads(message['res'][1])
             self.message_to_queue(message)
@@ -499,7 +533,7 @@ class ControlTasks:
         """check if the message associated with msg_id was 
         acknowledged. If no ack within 3 seconds, return failed"""
         counter = 0
-        while (msg_id not in self.completed_msgs) and (counter<20):
+        while (msg_id not in self.completed_msgs):# and (counter<20):
             yield from asyncio.sleep(0.05)
             counter+=1
         try:
@@ -614,7 +648,7 @@ class ControlTasks:
             class_def = data['f']
             if isinstance(class_def, tuple) or isinstance(class_def,list):
                 sid = class_def[1]
-                class_def = class_def[0]
+                class_def = shortnodes(class_def[0])
             else:
                 sid = None
             user = data['u']
@@ -662,11 +696,11 @@ class ControlTasks:
                         print('starting mapper',idx)
                         data = yield from self.comm.sense_queue.get(str(idx)+'_'+curried_func['u'])
                         print('got data')
-                        yield from self.map_worker(curried_func, data, idx)
+                        u = yield from self.map_worker(curried_func, data, idx)
                         print('finished mapper')
                 if self.comm.ID in curried_func['reduce_nodes']:
                     print('reducing')
-                    yield from self.reduce_worker(curried_func)
+                    u = yield from self.reduce_worker(curried_func)
                     print('reduced')
                 self.in_map = False                                                   
             else:   
@@ -683,6 +717,7 @@ class ControlTasks:
         idx = hash(key)%len(reducer_ids)
         return reducer_ids[idx]
     @asyncio.coroutine
+    @macrotimer
     def map_worker(self, curried_func, map_data, map_idx):
         reduce_nodes= curried_func['reduce_nodes']
         job_nodeid = self.add_id(curried_func['u']) 
@@ -706,10 +741,10 @@ class ControlTasks:
         reduce_node_addresses = [self.comm.address_book[i] for i in reduce_nodes]
         for dest in reduce_node_addresses:
             prefix = format(counter,'02d')
-            end_message = {'kv':("MAP_DONE",random_word()), 'u':counter+job_nodeid}
+            end_message = {'kv':("MAP_DONE",random_word()), 'u':format(counter,'02d')+job_nodeid}
             yield from self.node_to_node(end_message, dest)
         self.comm.sense_queue.remove(str(map_idx)+'_'+curried_func['u'])       
-        return
+        return curried_func['u']
     #@asyncio.coroutine
     def get_groupedby(self,q):
         first_pair = q.get_nowait()
@@ -729,6 +764,7 @@ class ControlTasks:
         return list_kv_pairs,key
     
     @asyncio.coroutine
+    @macrotimer
     def reduce_worker(self,curried_func):
         user = curried_func['u']
         reduce_controller = curried_func['reduce_func']
@@ -770,7 +806,7 @@ class ControlTasks:
         yield from self.node_to_node(result_tx, self.comm.address_book[99])
         print('map-reduce finished')
         self.comm.kv_queue.remove(user) 
-        return
+        return curried_func['u']
                 
     @asyncio.coroutine
     def allow_read_data(self):
