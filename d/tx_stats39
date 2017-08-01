@@ -1,0 +1,54 @@
+{"node": 99, "stats": [{"t": 0.25022292137146, "level": 0, "retries": 0}, {"t": 0.3328249454498291, "level": 0, "retries": 0}, {"t": 1.459225177764893, "level": 0, "retries": 2}, {"t": 0.3331000804901123, "level": 0, "retries": 0}], "msgize": 69, "rssi": null, "msg": {"res": [1, "{\"rs\": \"15_58.40_45.37_34.18_54.44_32.22_46.43_28\"}"]}}
+{"node": 99, "stats": [{"t": 0.328449010848999, "level": 0, "retries": 1}, {"t": 1.4892418384552, "level": 0, "retries": 1}], "msgize": 41, "rssi": null, "msg": {"res": [1, "{\"t\": 0.5219099521636963}"]}}
+null
+{"node": 55, "stats": [{"t": 4.466901063919067, "level": 2, "retries": 1}, {"t": 1.467768907546997, "level": 0, "retries": 2}, {"t": 0.3027000427246094, "level": 0, "retries": 1}], "msgize": 52, "rssi": null, "msg": {"kv": [3, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 99, "stats": [{"t": 0.4912779331207275, "level": 0, "retries": 1}, {"t": 0.9239530563354492, "level": 1, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "3371"]}}
+{"node": 17, "stats": [{"t": 0.9055540561676025, "level": 1, "retries": 1}, {"t": 0.2941610813140869, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "2923"]}}
+{"node": 18, "stats": [{"t": 0.6280689239501953, "level": 0, "retries": 1}, {"t": 0.2705950736999512, "level": 0, "retries": 0}], "msgize": 25, "rssi": null, "msg": {"kv": ["MAP_DONE", "581"]}}
+{"node": 55, "stats": [{"t": 1.214237928390503, "level": 1, "retries": 0}, {"t": 0.3035438060760498, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1450"]}}
+null
+{"node": 55, "stats": [{"t": 0.5346610546112061, "level": 0, "retries": 1}, {"t": 0.2805647850036621, "level": 0, "retries": 0}, {"t": 3.010315895080566, "level": 1, "retries": 1}], "msgize": 52, "rssi": null, "msg": {"kv": [3, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 99, "stats": [{"t": 0.4623301029205322, "level": 0, "retries": 0}], "msgize": 24, "rssi": null, "msg": {"kv": ["MAP_DONE", "52"]}}
+{"node": 17, "stats": [{"t": 13.20508599281311, "level": 6, "retries": 1}, {"t": 0.3344020843505859, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1370"]}}
+{"node": 18, "stats": [{"t": 2.682043075561523, "level": 1, "retries": 1}, {"t": 0.2931821346282959, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1103"]}}
+{"node": 55, "stats": [{"t": 0.2768821716308594, "level": 0, "retries": 0}, {"t": 3.044039964675903, "level": 1, "retries": 1}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "3899"]}}
+null
+{"node": 17, "stats": [{"t": 5.919764041900635, "level": 3, "retries": 1}, {"t": 0.3037581443786621, "level": 0, "retries": 1}, {"t": 0.3019299507141113, "level": 0, "retries": 0}], "msgize": 52, "rssi": null, "msg": {"kv": [0, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 17, "stats": [{"t": 0.4752471446990967, "level": 0, "retries": 1}], "msgize": 24, "rssi": null, "msg": {"kv": ["MAP_DONE", "52"]}}
+null
+{"node": 17, "stats": [{"t": 4.716876029968262, "level": 2, "retries": 2}, {"t": 0.3078250885009766, "level": 0, "retries": 0}, {"t": 0.3013827800750732, "level": 0, "retries": 0}], "msgize": 52, "rssi": null, "msg": {"kv": [0, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 17, "stats": [{"t": 0.4820740222930908, "level": 0, "retries": 0}, {"t": 1.508815050125122, "level": 0, "retries": 2}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1370"]}}
+null
+{"node": 18, "stats": [{"t": 0.5030100345611572, "level": 0, "retries": 0}, {"t": 0.3041048049926758, "level": 0, "retries": 0}, {"t": 0.938201904296875, "level": 1, "retries": 0}], "msgize": 52, "rssi": 54, "msg": {"kv": [0, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 18, "stats": [{"t": 8.89061713218689, "level": 4, "retries": 2}, {"t": 0.3050270080566406, "level": 0, "retries": 0}], "msgize": 26, "rssi": 54, "msg": {"kv": ["MAP_DONE", "1103"]}}
+null
+{"node": 55, "stats": [{"t": 8.502075910568237, "level": 4, "retries": 2}, {"t": 10.87699198722839, "level": 5, "retries": 0}, {"t": 0.5671491622924805, "level": 0, "retries": 0}], "msgize": 52, "rssi": null, "msg": {"kv": [3, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 99, "stats": [{"t": 0.4912879467010498, "level": 0, "retries": 0}, {"t": 3.031615018844604, "level": 1, "retries": 1}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "3899"]}}
+{"node": 17, "stats": [{"t": 4.161975145339966, "level": 2, "retries": 1}, {"t": 1.536128997802734, "level": 0, "retries": 1}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "2278"]}}
+{"node": 18, "stats": [{"t": 2.972440958023071, "level": 1, "retries": 1}, {"t": 0.6031548976898193, "level": 0, "retries": 1}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "2282"]}}
+{"node": 55, "stats": [{"t": 3.305578947067261, "level": 1, "retries": 2}, {"t": 2.992423057556152, "level": 1, "retries": 1}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1795"]}}
+null
+{"node": 55, "stats": [{"t": 0.5685050487518311, "level": 0, "retries": 0}, {"t": 0.568580150604248, "level": 0, "retries": 0}, {"t": 0.6081969738006592, "level": 0, "retries": 0}], "msgize": 52, "rssi": null, "msg": {"kv": [3, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 99, "stats": [{"t": 0.4661791324615479, "level": 0, "retries": 0}, {"t": 0.6238019466400146, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "2163"]}}
+{"node": 17, "stats": [{"t": 1.510113000869751, "level": 0, "retries": 1}, {"t": 3.292023181915283, "level": 1, "retries": 2}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "3447"]}}
+{"node": 18, "stats": [{"t": 3.265588998794556, "level": 1, "retries": 1}, {"t": 0.6034328937530518, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "3352"]}}
+{"node": 55, "stats": [{"t": 0.6176600456237793, "level": 0, "retries": 0}, {"t": 0.5979340076446533, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1331"]}}
+{"node": 99, "stats": [{"t": 0.3298990726470947, "level": 0, "retries": 1}, {"t": 0.3263649940490723, "level": 0, "retries": 1}], "msgize": 41, "rssi": null, "msg": {"res": [1, "{\"t\": 0.5678141117095947}"]}}
+null
+{"node": 55, "stats": [{"t": 0.2678420543670654, "level": 0, "retries": 0}, {"t": 0.2697560787200928, "level": 0, "retries": 0}, {"t": 0.318291187286377, "level": 0, "retries": 0}], "msgize": 52, "rssi": null, "msg": {"kv": [3, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 99, "stats": [{"t": 0.4639439582824707, "level": 0, "retries": 0}, {"t": 0.9414310455322266, "level": 1, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1923"]}}
+{"node": 17, "stats": [{"t": 2.982779026031494, "level": 1, "retries": 1}, {"t": 0.3054599761962891, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1381"]}}
+{"node": 18, "stats": [{"t": 0.8826639652252197, "level": 1, "retries": 0}, {"t": 0.2956438064575195, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "3767"]}}
+{"node": 55, "stats": [{"t": 2.082726001739502, "level": 1, "retries": 0}, {"t": 0.30069899559021, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1979"]}}
+null
+{"node": 55, "stats": [{"t": 16.95080208778381, "level": 7, "retries": 1}, {"t": 1.506276845932007, "level": 0, "retries": 2}, {"t": 0.6220788955688477, "level": 0, "retries": 0}], "msgize": 52, "rssi": null, "msg": {"kv": [3, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 99, "stats": [{"t": 0.4745779037475586, "level": 0, "retries": 0}, {"t": 1.211199045181274, "level": 1, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1856"]}}
+{"node": 17, "stats": [{"t": 0.5665440559387207, "level": 0, "retries": 0}, {"t": 4.815562963485718, "level": 2, "retries": 1}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1797"]}}
+{"node": 18, "stats": [{"t": 0.572202205657959, "level": 0, "retries": 0}, {"t": 0.5992500782012939, "level": 0, "retries": 0}], "msgize": 25, "rssi": null, "msg": {"kv": ["MAP_DONE", "862"]}}
+{"node": 55, "stats": [{"t": 0.6658539772033691, "level": 0, "retries": 1}, {"t": 0.5711460113525391, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "2886"]}}
+null
+{"node": 55, "stats": [{"t": 3.243136882781982, "level": 1, "retries": 1}, {"t": 0.6204550266265869, "level": 0, "retries": 1}, {"t": 0.5953309535980225, "level": 0, "retries": 0}], "msgize": 52, "rssi": null, "msg": {"kv": [3, [39, [1.002764228166377, 2.42557531278403]]]}}
+{"node": 99, "stats": [{"t": 0.7591519355773926, "level": 0, "retries": 0}, {"t": 1.499306917190552, "level": 1, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "1279"]}}
+{"node": 17, "stats": [{"t": 0.9003250598907471, "level": 0, "retries": 1}, {"t": 3.623050928115845, "level": 1, "retries": 1}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "4093"]}}
+{"node": 18, "stats": [{"t": 0.5902409553527832, "level": 0, "retries": 0}, {"t": 1.475728988647461, "level": 1, "retries": 0}], "msgize": 25, "rssi": null, "msg": {"kv": ["MAP_DONE", "537"]}}
+{"node": 55, "stats": [{"t": 0.6177611351013184, "level": 0, "retries": 0}, {"t": 0.583388090133667, "level": 0, "retries": 0}], "msgize": 26, "rssi": null, "msg": {"kv": ["MAP_DONE", "2185"]}}
