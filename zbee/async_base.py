@@ -6,6 +6,19 @@ import ustruct as struct
 from zbee.frame import APIFrame
 from zbee.python2to3 import byteToInt, intToByte
 print('new version')
+def parse_raw(rf_data):
+    """rf_data is like kv_whateverdata1203jjlong"""
+    try:
+        chunk_type = rf_data.split('_')[0]
+        without_chunk_type = rf_data.replace(chunk_type+'_', '', 1)
+        data_size = 17
+        data = without_chunk_type[0:data_size]
+        c= int(data[data_size:data_size+2])
+        idx = int(data[data_size+2:data_size+4])
+        uname = int(data[data_size+4::])
+        return {chunk_type:data, 'c':c,'n':idx, 'u':uname}
+    except:
+        return {}
 class XBeeAsync(XBeeBase):
     """Subclass of XBeeBase that fits with asynchronous event loop"""
     @asyncio.coroutine
@@ -16,7 +29,7 @@ class XBeeAsync(XBeeBase):
             msg = yield from self.wait_read_frame(dataq)
             #print('wait frame is: ',msg)
             try:
-                data = json.loads(msg['rf_data'])
+                data = parse_raw(msg['rf_data'])
                 try:
                     idx = data['n']
                     del data['n']
