@@ -558,7 +558,7 @@ class ControlTasks:
             status = 'timed out'
             retries = None
         return status, retries
-        @asyncio.coroutine
+    @asyncio.coroutine
     def benchmark(self):
         while True:
             data = yield from self.comm.bm_q.get()
