@@ -1,5 +1,7 @@
 import json as json
-import copy
+MSG_LEN=50
+def deepcopy(d):
+    return {k:v for k,v in d.items()}
 def format(i,x):
     diff = 2-len(str(i))
     return (diff*'0'+str(i))[0:2]
@@ -12,7 +14,15 @@ def tuplify(chunk_type, chunk, c, idx, user):
     """creates msg format like
     "kv_whateverdata1203jjlong"
     """
-    return chunk_type+'_'+chunk+format(c,_)+format(idx,_)+user
+    return chunk_type+'_'+pad_chunk(chunk)+format(c,'_')+format(idx,'_')+user
+def pad_chunk(chunk):
+    l = len(chunk)
+    x = MSG_LEN
+    if l>=x:
+        return chunk
+    else:
+        return chunk+(x-l)*'#'
+
 def add_chksum_info_tochunks(chunks, user, chunk_type):
     num_chunks = len(chunks)
     full_chunk_msgs = [tuplify(chunk_type, chunk, num_chunks, idx, user) 
@@ -25,7 +35,7 @@ def chunk_data_to_payload(immute_dict_msg):
     """take a single message in json form
     {something:something, 'u':username}, where u is optional
     and split into a list of strings, each less than x bytes"""
-    dict_msg = copy.deepcopy(immute_dict_msg)
+    dict_msg = deepcopy(immute_dict_msg)
     try:
         user = dict_msg['u']
         del dict_msg['u']
@@ -38,7 +48,7 @@ def chunk_data_to_payload(immute_dict_msg):
     if not isinstance(string_msg, str):
         string_msg = json.dumps(dict_msg[chunk_type],separators=(',',':'))
     #convert {res:something} to '{res:something}', or {kv_values:(a,b)} to '{kv_values:(a,b)}'
-    string_list = split_string_into_list(string_msg, 17)#23)
+    string_list = split_string_into_list(string_msg, MSG_LEN)#23)
     full_msgs = add_chksum_info_tochunks(string_list, user, chunk_type)
     print('num chunks: ', len(full_msgs))
     return full_msgs

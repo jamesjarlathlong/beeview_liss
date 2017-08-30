@@ -44,12 +44,27 @@ def timeit(method):
 def random_word():
     return str(urandom.getrandbits(12))
 @timeit
-def benchmark1(size):
+def benchmark_runner(size, bm_fun):
+    bm_fun(size)
+    return
+def b1(size):
     def vec(size):
         return [urandom.getrandbits(8)/100 for i in range(size)]    
     mat = (vec(size) for i in range(size))
     v = np.Vector(*vec(size))
     res = v.gen_matrix_mult(mat)
+    return 
+def b2(size):
+    def vec(size):
+        return [urandom.getrandbits(8)/100 for i in range(size)]    
+    mat = [vec(size) for i in range(size)]
+    res = np.pagerank(mat)
+    return
+def b3(size):
+    def vec(size):
+       return [urandom.getrandbits(8)/100 for i in range(size)]    
+    v = vec(size)
+    ft = np.fft(v)
     return
 def timecoroutine(method):
     def timed(*args, **kw):
@@ -543,14 +558,20 @@ class ControlTasks:
             status = 'timed out'
             retries = None
         return status, retries
-    @asyncio.coroutine
+        @asyncio.coroutine
     def benchmark(self):
         while True:
             data = yield from self.comm.bm_q.get()
-            t, res = benchmark1(data)
+            b_type = [k for k in data if k in ('b1','b2','b3')][0]
+            size = data[b_type]
+            func_translation = {'b1':b1,'b2':b2,'b3':b3}
+            print('running benchmark', b_type)
+            t, res = benchmark_runner(size, func_translation[b_type])
             self.most_recent_benchmark = t
-            result_tx =  {'res':(1,json.dumps({'t':t})),'u':self.add_id(random_word()+'bnch'+str(data))}
-            yield from self.node_to_node(result_tx, self.comm.address_book[99])
+            result_tx =  {'res':(1,json.dumps({'t':t}))
+            ,'u':self.add_id(random_word()+'bnch'+b_type[1]+str(size))}
+            yield from self.node_to_node(result_tx,
+                     self.comm.address_book['Server'])
 
     @asyncio.coroutine
     def report_neighbours(self):
@@ -565,8 +586,10 @@ class ControlTasks:
             neighbors = self.neighbors
             cmped = [cmp(n) for n in neighbors]
             whole_thing = ('.').join(cmped)
-            result_tx = {'res':(1,json.dumps({'rs':whole_thing})),'u':self.add_id(random_word()+'rs')}
-            yield from self.node_to_node(result_tx, self.comm.address_book[99])
+            result_tx = {'res':(1,json.dumps({'rs':whole_thing})),
+                        'u':self.add_id(random_word()+'rs')}
+            yield from self.node_to_node(result_tx,
+                                         self.comm.address_book[99])
     @asyncio.coroutine
     def at_reader(self):
         while True:
@@ -605,17 +628,19 @@ class ControlTasks:
     def s_to_queue(self, data): 
         self.comm.sense_queue.put_nowait(data['s'], data['u'])
     def bm_to_queue(self, data):
-        self.comm.bm_q.put_nowait(data['bm'])
+        self.comm.bm_q.put_nowait(data)
     def fn_to_queue(self, data):
         self.comm.fn_queue.put_nowait(data['fn'])
     def kv_to_queue(self, data):
         kv_pair = data['kv'] 
         self.comm.kv_queue.put_nowait((Q_Item(kv_pair[0]), kv_pair[1]), data['u'])
     def message_to_queue(self, data):
-        queue_map = {'f':self.f_to_queue,
-                     'kv':self.kv_to_queue,
-                     's':self.s_to_queue
-                     ,'bm':self.bm_to_queue
+        queue_map = {'f':self.f_to_queue
+                     ,'kv':self.kv_to_queue
+                     ,'s':self.s_to_queue
+                     ,'b1':self.bm_to_queue
+                     ,'b2':self.bm_to_queue
+                     ,'b3':self.bm_to_queue
                      ,'fn':self.fn_to_queue}
         matches = [k for k in data if k in queue_map]
         for key in matches:
