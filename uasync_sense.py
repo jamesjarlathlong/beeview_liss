@@ -101,9 +101,19 @@ def timed_gen(gen, user, key=None, node=None):
             break
     print('timed gen**********',user,key,node)
     if key is not None:
-        append_record('/etc/init.d/beeview_liss/px_stats',{'type':'reducer','ts':ts,'onkey':key,'job':user})
+        append_record('/etc/init.d/beeview_liss/px_stats',
+                      {'type':'reducer'
+                       ,'ts':ts
+                       ,'onkey':key
+                       ,'job':user
+                       ,'self':os.getenv("NODE_ID")})
     else:
-        append_record('/etc/init.d/beeview_liss/px_stats',{'type':'mapper','ts':ts,'mapnum':node,'job':user})
+        append_record('/etc/init.d/beeview_liss/px_stats',
+                     {'type':'mapper'
+                      ,'ts':ts
+                      ,'mapnum':node
+                      ,'job':user
+                      ,'self':os.getenv("NODE_ID")})
 class Comm:
     """ a class organising communications for uasync_sense:
     qs, interrupts and serial objects """
@@ -538,7 +548,11 @@ class ControlTasks:
             print('pack: ',packaged)
             t, (retries,level) = unpack(packaged)
             stats.append({'t':t,'retries':retries,'level':level})
-        return {'msgize':len(chunks) ,'stats':stats,'rssi':rssi,'node':nodenum}        
+        return {'msgize':len(chunks)
+                ,'stats':stats
+                ,'rssi':rssi
+                ,'node':nodenum
+                ,'self':os.getenv("NODE_ID")}        
          
     def acknowledge(self, msg):
         """on receipt of an ack from the network, add the msg id
