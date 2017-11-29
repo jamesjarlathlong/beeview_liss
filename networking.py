@@ -1,12 +1,16 @@
 import json as json
-MSG_LEN=50
+MSG_LEN=40
 def deepcopy(d):
     return {k:v for k,v in d.items()}
 def format(i,x):
-    diff = 2-len(str(i))
-    return (diff*'0'+str(i))[0:2]
+    #i is the number itself, x is number of digits
+    diff = x-len(str(i))
+    return (diff*'0'+str(i))[0:x]
 def json_to_bytes(dict_msg):
-    return bytes(json.dumps(dict_msg,separators=(',',':')), 'ascii')
+    print('dict msg: ', dict_msg)
+    byted = bytes(dict_msg, 'ascii')
+    print('len byted: ', len(byted), byted)
+    return byted
 
 def split_string_into_list(string, n):
     return [string[x:x+n] for x in range(0, len(string), n)]
@@ -14,7 +18,7 @@ def tuplify(chunk_type, chunk, c, idx, user):
     """creates msg format like
     "kv_whateverdata1203jjlong"
     """
-    return chunk_type+'_'+pad_chunk(chunk)+format(c,'_')+format(idx,'_')+user
+    return chunk_type+'_'+pad_chunk(chunk)+format(c,3)+format(idx,3)+user
 def pad_chunk(chunk):
     l = len(chunk)
     x = MSG_LEN
@@ -42,7 +46,7 @@ def chunk_data_to_payload(immute_dict_msg):
     except KeyError:
         print('no user in this message')
         user = None
-    possible_chunks = ('kv','s','res','bm','f','fn','test') #different types of messages we might want to send
+    possible_chunks = ('kv','s','res','b1','b2','b3','f','fn','test') #different types of messages we might want to send
     chunk_type = set(dict_msg).intersection(possible_chunks).pop()
     string_msg = dict_msg[chunk_type]
     if not isinstance(string_msg, str):

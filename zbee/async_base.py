@@ -5,7 +5,7 @@ import utime as time
 import ustruct as struct
 from zbee.frame import APIFrame
 from zbee.python2to3 import byteToInt, intToByte
-MSG_LEN=50
+MSG_LEN=40
 print('new version')
 def parse_raw(rf_data):
     """rf_data is like kv_whateverdata1203jjlong"""
@@ -15,9 +15,9 @@ def parse_raw(rf_data):
         chunk_type = rf_data.split('_')[0]
         without_chunk_type = rf_data.replace(chunk_type+'_', '', 1)
         data = without_chunk_type[0:data_size].strip('#')
-        c= int(without_chunk_type[data_size:data_size+2])
-        idx = int(without_chunk_type[data_size+2:data_size+4])
-        uname = without_chunk_type[data_size+4::]
+        c= int(without_chunk_type[data_size:data_size+3])
+        idx = int(without_chunk_type[data_size+3:data_size+6])
+        uname = without_chunk_type[data_size+6::]
         d = {chunk_type:data, 'c':c,'n':idx, 'u':uname}
         print('d: ',d)
         return d
@@ -34,7 +34,7 @@ class XBeeAsync(XBeeBase):
             msg = yield from self.wait_read_frame(dataq)
             #print('wait frame is: ',msg)
             try:
-                data = parse_raw(json.loads(msg['rf_data']))
+                data = parse_raw(msg['rf_data'].decode('ascii'))
                 try:
                     idx = data['n']
                     del data['n']

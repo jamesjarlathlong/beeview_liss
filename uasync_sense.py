@@ -66,6 +66,11 @@ def b3(size):
     v = vec(size)
     ft = np.fft(v)
     return
+def b4(size):
+    if size<2:
+        return size
+    else:
+        return b4(size-1)+b4(size-2)
 def timecoroutine(method):
     def timed(*args, **kw):
         ts = time.time()
@@ -89,12 +94,13 @@ def timed_gen(gen, user, key=None, node=None):
     while True:
         try:
             t, res = timeit(next)(gen)
+            print('t: ',t, 'res: ', res)
             ts.append(t)
             yield res
         except StopIteration:
             break
     print('timed gen**********',user,key,node)
-    if key:
+    if key is not None:
         append_record('/etc/init.d/beeview_liss/px_stats',{'type':'reducer','ts':ts,'onkey':key,'job':user})
     else:
         append_record('/etc/init.d/beeview_liss/px_stats',{'type':'mapper','ts':ts,'mapnum':node,'job':user})
@@ -141,7 +147,7 @@ class Comm:
                             60: b'\x00\x13\xa2\x00AZ\xe8&',61: b'\x00\x13\xa2\x00A\x05F\x97',
                             63: b'\x00\x13\xa2\x00A\x05H\x91',64: b'\x00\x13\xa2\x00@\xdasm',
                             68: b'\x00\x13\xa2\x00@\xdasl',69: b'\x00\x13\xa2\x00A\x05H\x8b',
-                            95: b'\x00\x13\xa2\x00@\xdas\x95',96: b'\x00\x13\xa2\x00@\xdasd'}
+                            96: b'\x00\x13\xa2\x00@\xdas\x95',95: b'\x00\x13\xa2\x00@\xdasd'}
     def inverse_address(self,value):
         book = self.address_book
         return list(book.keys())[list(book.values()).index(value)]
@@ -502,6 +508,7 @@ class ControlTasks:
         else:
             stats = yield from self.network_awrite_chunked(message, address) 
             stats['msg'] = message 
+            stats['u'] = message['u']
             return stats
     @asyncio.coroutine
     def network_awrite_chunked(self, buf, addr):
@@ -531,7 +538,7 @@ class ControlTasks:
             print('pack: ',packaged)
             t, (retries,level) = unpack(packaged)
             stats.append({'t':t,'retries':retries,'level':level})
-        return {'msgize':len(json.dumps(buf,separators=(',',':'))) ,'stats':stats,'rssi':rssi,'node':nodenum}        
+        return {'msgize':len(chunks) ,'stats':stats,'rssi':rssi,'node':nodenum}        
          
     def acknowledge(self, msg):
         """on receipt of an ack from the network, add the msg id
@@ -562,16 +569,16 @@ class ControlTasks:
     def benchmark(self):
         while True:
             data = yield from self.comm.bm_q.get()
-            b_type = [k for k in data if k in ('b1','b2','b3')][0]
+            b_type = [k for k in data if k in ('b1','b2','b3','b4')][0]
             size = data[b_type]
-            func_translation = {'b1':b1,'b2':b2,'b3':b3}
+            func_translation = {'b1':b1,'b2':b2,'b3':b3,'b4':b4}
             print('running benchmark', b_type)
             t, res = benchmark_runner(size, func_translation[b_type])
             self.most_recent_benchmark = t
             result_tx =  {'res':(1,json.dumps({'t':t}))
             ,'u':self.add_id(random_word()+'bnch'+b_type[1]+str(size))}
             yield from self.node_to_node(result_tx,
-                     self.comm.address_book['Server'])
+                     self.comm.address_book[99])
 
     @asyncio.coroutine
     def report_neighbours(self):
@@ -603,7 +610,7 @@ class ControlTasks:
                 rssi = payload[-1]
                 upsert_data = {'source':self.ID,'target':neighbor_number,'value':rssi}
                 self.upsert(upsert_data)
-                print('upserting')
+                print('upserting', upsert_data)
     def upsert(self, entry):
         def uq(e):
             return str(e['source'])+str(e['target'])
@@ -641,6 +648,7 @@ class ControlTasks:
                      ,'b1':self.bm_to_queue
                      ,'b2':self.bm_to_queue
                      ,'b3':self.bm_to_queue
+                     ,'b4':self.bm_to_queue
                      ,'fn':self.fn_to_queue}
         matches = [k for k in data if k in queue_map]
         for key in matches:
